@@ -23,7 +23,6 @@ function _zero_nested!(t::Tuple)
     end
 end
 
-# allocate all scratch storage once
 function make_hc_workspace(x_template::Vector{Float64}, utils::NTuple{N}) where {N}
     T = eltype(x_template)
     n = length(x_template)
@@ -34,20 +33,21 @@ function make_hc_workspace(x_template::Vector{Float64}, utils::NTuple{N}) where 
     ubar = ntuple(i -> zeros(T, size(utils[i], i)), Val(N))
     dudpi = ntuple(p -> ntuple(q -> zeros(T, size(utils[p], p), size(utils[p], q)), Val(N)), Val(N))
 
-    Fx = zeros(T, n, n)
-    Ft = Vector{T}(undef, rsize)
-    ipiv = Vector{BlasInt}(undef, n)
+    J_aug = zeros(T, n + 1, n + 1)
+    Fx = view(J_aug, 1:n, 1:n)
+    Ft = view(J_aug, 1:n, n + 1)
+    ipiv = Vector{BlasInt}(undef, n + 1)
 
-    v = Vector{T}(undef, rsize)
-    w = Vector{T}(undef, rsize)
+    rhs_aug = Vector{T}(undef, n + 1)
 
-    dxdt = Vector{T}(undef, rsize)
     xpred = Vector{T}(undef, n)
     x_diff = Vector{T}(undef, n)
     dx_step = Vector{T}(undef, n)
     x_nxt = Vector{Float64}(undef, n)
 
-    return (; pi, res, ubar, dudpi, Fx, ipiv, Ft, v, w, dxdt, xpred, x_diff, dx_step, x_nxt)
+    det_sign = Float64[0.0]
+
+    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign)
 end
 
 function predict!(
@@ -71,23 +71,39 @@ function predict!(
     unilateral_deviations!(ws.ubar, utils, ws.pi)
     jacobian_t!(ws.Ft, ws.ubar, mu, utils)
 
-    # In-place factorization and solve (0 allocations)
-    fast_lu!(ws.Fx, ws.ipiv)
-
-    copyto!(ws.dxdt, ws.Ft)
-    LinearAlgebra.LAPACK.getrs!('N', ws.Fx, ws.ipiv, ws.dxdt)
-
-    dtds = 1.0 / sqrt(1.0 + dot(ws.dxdt, ws.dxdt))
-
-    # Evaluate direction check before mutating dx_out (in case dx_out aliases lastdx)
-    sign_check = dtds * (lastdt - dot(ws.dxdt, lastdx))
-
-    if sign_check < 0.0
-        mul!(dx_out, dtds, ws.dxdt)
-        dtds = -dtds
-    else
-        mul!(dx_out, -dtds, ws.dxdt)
+    n = length(x)
+    @inbounds for i in 1:n
+        ws.J_aug[end, i] = lastdx[i]
     end
+    ws.J_aug[end, end] = lastdt
+
+    fill!(ws.rhs_aug, 0.0)
+    ws.rhs_aug[end] = 1.0
+
+    fast_lu!(ws.J_aug, ws.ipiv)
+
+    cur_det_sign = 1.0
+    n_aug = n + 1
+    @inbounds for i in 1:n_aug
+        if ws.J_aug[i, i] < 0.0
+            cur_det_sign = -cur_det_sign
+        end
+        if ws.ipiv[i] != i
+            cur_det_sign = -cur_det_sign
+        end
+    end
+    if ws.det_sign[1] == 0.0
+        ws.det_sign[1] = cur_det_sign
+    end
+
+    LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
+
+    norm_factor = 1.0 / sqrt(dot(ws.rhs_aug, ws.rhs_aug))
+
+    @inbounds for i in 1:n
+        dx_out[i] = ws.rhs_aug[i] * norm_factor
+    end
+    dtds = ws.rhs_aug[end] * norm_factor
 
     return dx_out, dtds
 end
@@ -110,7 +126,9 @@ function correct!(
     copyto!(ws.x_nxt, ws.xpred)
     t_out = tpred
 
+    n = length(dx)
     i = 0
+
     while true
         fill!(ws.res, 0.0)
         _zero_nested!(ws.ubar)
@@ -124,7 +142,6 @@ function correct!(
         @. ws.x_diff = ws.x_nxt - ws.xpred
         r_con = dot(ws.x_diff, dx) + (t_out - tpred) * dt
 
-        # Absolute convergence check
         if dot(ws.res, ws.res) + r_con^2 < abs_tol^2
             return true, ws.x_nxt, t_out
         end
@@ -135,30 +152,68 @@ function correct!(
         jacobian_x!(ws.Fx, ws.pi, t_out, ws.dudpi, utils)
         jacobian_t!(ws.Ft, ws.ubar, mu, utils)
 
-        rmul!(ws.res, -1)
+        @inbounds for j in 1:n
+            ws.J_aug[end, j] = dx[j]
+        end
+        ws.J_aug[end, end] = dt
 
-        fast_lu!(ws.Fx, ws.ipiv)
+        @inbounds for j in 1:n
+            ws.rhs_aug[j] = -ws.res[j]
+        end
+        ws.rhs_aug[end] = -r_con
 
-        copyto!(ws.v, ws.Ft)
-        LinearAlgebra.LAPACK.getrs!('N', ws.Fx, ws.ipiv, ws.v)
+        fast_lu!(ws.J_aug, ws.ipiv)
 
-        copyto!(ws.w, ws.res)
-        LinearAlgebra.LAPACK.getrs!('N', ws.Fx, ws.ipiv, ws.w)
+        # Fold Jump Detection ---
+        cur_det_sign = 1.0
+        n_aug = n + 1
+        @inbounds for j in 1:n_aug
+            if ws.J_aug[j, j] < 0.0
+                cur_det_sign = -cur_det_sign
+            end
+            if ws.ipiv[j] != j
+                cur_det_sign = -cur_det_sign
+            end
+        end
 
-        dt_step = (-r_con - dot(dx, ws.w)) / (dt - dot(dx, ws.v))
-        @. ws.dx_step = ws.w - dt_step * ws.v
+        # If determinant flips, we jumped the fold. Abort and halve `ds`.
+        if ws.det_sign[1] != 0.0 && cur_det_sign != ws.det_sign[1]
+            return false, ws.x_nxt, t_out
+        end
+        # --------------------------------
 
-        step_norm = sqrt(dot(ws.dx_step, ws.dx_step) + dt_step^2)
+        LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
+
+        dt_step = ws.rhs_aug[end]
+        step_norm_sq = dt_step^2
+
+        @inbounds for j in 1:n
+            dx_step_j = ws.rhs_aug[j]
+            ws.dx_step[j] = dx_step_j
+            step_norm_sq += dx_step_j^2
+        end
+
+        step_norm = sqrt(step_norm_sq)
         val_norm = sqrt(dot(ws.x_nxt, ws.x_nxt) + t_out^2)
 
-        # Relative convergence check
         if step_norm < rel_tol * val_norm
             @. ws.x_nxt += ws.dx_step
             t_out += dt_step
+
+            # --- NEW: Corrector Distance Safeguard ---
+            # Rejects step if the corrector wandered too far from predictor
+            dist_sq = (t_out - tpred)^2
+            @inbounds for j in 1:n
+                dist_sq += (ws.x_nxt[j] - ws.xpred[j])^2
+            end
+            if dist_sq > (2.0 * ds)^2
+                return false, ws.x_nxt, t_out
+            end
+            # -----------------------------------------
+
             return true, ws.x_nxt, t_out
         end
 
-        # Only fail if we exceed limits *after* establishing non-convergence
         if i >= iters
             return false, ws.x_nxt, t_out
         end
@@ -208,19 +263,23 @@ function nash(
 
     ws = make_hc_workspace(x, utils)
 
-    while t <= stop_t && iteration <= stop_iters && !(regret <= stop_eps) && !stall
+    while t <= stop_t && iteration <= stop_iters && !stall
         dx, dt = predict!(dx, x, t, dx, dt, utils, ws)
+        regret = max_deviation_incentive(ws.ubar, ws.pi)
+
+        if (regret <= stop_eps)
+            break
+        end
 
         corrected = false
         t_new = t
-
         while !corrected
             corrected, x_new, t_new = correct!(x, t, dx, dt, ds, utils, ws)
 
             if !corrected
                 ds /= 2
                 successes_in_row = 0
-                if ds <= 1e-4
+                if ds <= 1e-7
                     # Progress along path stalled!
                     stall = true
                     break
@@ -239,7 +298,6 @@ function nash(
             end
         end
 
-        regret = max_deviation_incentive(ws.ubar, ws.pi)
     end
 
     return ws.pi, (; t, iteration, regret, stall)
