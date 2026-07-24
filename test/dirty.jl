@@ -112,13 +112,11 @@ function runtest(n, seed)
     tc = @timed pigstr = gambit_equilibrium(io)
     pig = parse_gambit_output(pigstr, Us)
 
+    agree = all(norm.(pi .- pig) .<= 1e-5)
+    eqg = check_equilibrium(Us, pig)
+    eqj = check_equilibrium(Us, pi)
 
-    if !all(norm.(pi .- pig) .<= 1e-5)
-        @show status
-        println(seed)
-    end
-
-    println("$(tj.time) $(tc.time)")
+    println("$(tj.time) $(tc.time) $agree $eqg $eqj")
     pi, pig
 end
 
@@ -152,13 +150,13 @@ function check_equilibrium(
     max_deviation_incentive(deviations, pi)
 end
 
-#=
-ra = rand(Int64, 1000)
-for i in 1:1000
-    runtest(5, ra[i])
-end
-=#
 
+ra = rand(Int64, 1000)
+for i in 1:100
+    runtest(7, ra[i])
+end
+
+#=
 seed_disagree =  4219951271420067762
 
 seed_invert = -1266070885943056040
@@ -185,7 +183,7 @@ n = 5
     #ipi, ipig = runtest(5, seed_invert)
 
     #    bpi, bpig = runtest(5, seed_bigbad)
-
+=#
 #inversion
 
 #=
