@@ -94,20 +94,21 @@ gambit_equilibrium(io)
 function runtest(n, seed)
     Random.seed!(seed)
     Us = (
-        randn(n,n,n,n,n),
-        randn(n,n,n,n,n),
-        randn(n,n,n,n,n),
-        randn(n,n,n,n,n),
-        randn(n,n,n,n,n)
+        randn(n, n, n, n, n),
+        randn(n, n, n, n, n),
+        randn(n, n, n, n, n),
+        randn(n, n, n, n, n),
+        randn(n, n, n, n, n)
     )
 
     tj = @timed pi, status = nash(Us; stop_eps=0.0)
 
-#    if status.regret >= 1e4 || status.t <= 100 # !all(norm.(pi .- pig) .<= 1e-5)
-#        @show status
-#        println(seed)
-#    end
-#
+        if status.regret >= 1e-4 || status.t <= 100 || status.stall ==true # !all(norm.(pi .- pig) .<= 1e-5)
+            @show status
+            println(seed)
+        end
+    #
+    return true
     io = export_gambit_format_buf(Us)
     tc = @timed pigstr = gambit_equilibrium(io)
     pig = parse_gambit_output(pigstr, Us)
@@ -151,10 +152,45 @@ function check_equilibrium(
 end
 
 
+
 ra = rand(Int64, 1000)
-for i in 1:100
-    runtest(7, ra[i])
+for i in 1:1000
+    if i%10==0
+        println(i)
+    end
+    runtest(5, ra[i])
 end
+
+
+ A::Matrix{Float64} = [3 0; 0 2]
+    B::Matrix{Float64} = [2 0; 0 3]
+    Us = (A, B)
+    pi, status = nash(Us)
+
+
+    io = export_gambit_format_buf(Us)
+    tc = @timed pigstr = gambit_equilibrium(io)
+    pig = parse_gambit_output(pigstr, Us)
+
+    #=
+
+
+p1 = Float64[3 1; 5 2;;; 1 0; 2 1]
+p2 = Float64[3 5; 1 2;;; 1 2; 0 1]
+p3 = Float64[3 1; 1 0;;; 5 2; 2 1]
+three_prisoners = (p1, p2, p3)
+
+pi, status = nash(three_prisoners; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
+=#
+for p in eachindex(pi)
+    println("pi_$p = ", round.(pi[p]; digits=5))
+end
+
+#ipi, ipig = runtest(5, seed_invert)
+
+#    bpi, bpig = runtest(5, seed_bigbad)
+
+
 
 #=
 seed_disagree =  4219951271420067762
@@ -195,3 +231,22 @@ n = 5
 
 
 =#
+
+
+
+using Random
+Random.seed!(3462345634)
+
+Us = (
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5)
+)
+
+pi, status = nash(Us; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
+
+for p in eachindex(pi)
+    println(round.(pi[p]; digits=5))
+end

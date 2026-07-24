@@ -2,8 +2,16 @@
 
 > Package is not registered yet -- it is not tested, and its API is not stable!
 
-Compute an epsilon Nash equilibrium of an N-player game.
+Compute a mixed $\epsilon$-Nash equilibrium of an N-player game by tracing a logit equilibrium path satisfying
+$$
+\pi_{ij} = \frac{e^{tu_i(j,\pi_{-i})}}{\sum_k e^{tu_i(k,\pi_{-i})}}
+$$
+from a uniform profile at $t=0$ to a generically unique Nash equilibrium at infinity.
 
+The algorithm stops when either:
+ - ($\epsilon$-NE condition) there is no unilateral deviation from `pi` more profitable than `stop_eps`,
+ - (logit condition) a solution is found for parameter `t` greater or equal to `stop_t`,
+ - or the maximum number of iterations of `stop_iters` is reached.
 ## Install
 
 Install the package directly from GitHub by running:
@@ -13,33 +21,26 @@ using Pkg; Pkg.add(url="https://github.com/votroto/LogitNash.jl")
 
 ## Usage
 
+The following example solves a three-player prisoners dilemma
 ```julia
 using LogitNash
 
-using Random
-Random.seed!(3462345634)
+p1 = Float64[3 1; 5 2;;; 1 0; 2 1]
+p2 = Float64[3 5; 1 2;;; 1 2; 0 1]
+p3 = Float64[3 1; 1 0;;; 5 2; 2 1]
+three_prisoners = (p1, p2, p3)
 
-Us = (
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5)
-)
-
-pi, status = nash(Us; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
+pi, status = nash(three_prisoners; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
 
 for p in eachindex(pi)
-    println(round.(pi[p]; digits=5))
+    println("pi_$p = ", round.(pi[p]; digits=5))
 end
 ```
-should print the strategies
+which should result in the strategy profile
 ```julia
-[0.21543, 0.28827, 0.26213, 0.1211, 0.11307]
-[0.0, 0.00699, 0.05883, 0.31778, 0.6164]
-[0.0, 0.0, 0.0, 0.73337, 0.26663]
-[0.32376, 0.0, 0.0, 0.34957, 0.32667]
-[0.105, 0.45382, 0.0, 0.0, 0.44118]
+pi_1 = [0.0, 1.0]
+pi_2 = [0.0, 1.0]
+pi_3 = [0.0, 1.0]
 ```
 
 ## Notes
