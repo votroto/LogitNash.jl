@@ -151,7 +151,7 @@ function check_equilibrium(
     max_deviation_incentive(deviations, pi)
 end
 
-
+#=
 
 ra = rand(Int64, 1000)
 for i in 1:1000
@@ -172,6 +172,10 @@ end
     tc = @timed pigstr = gambit_equilibrium(io)
     pig = parse_gambit_output(pigstr, Us)
 
+for p in eachindex(pi)
+    println("pi_$p = ", round.(pi[p]; digits=5))
+end
+=#
     #=
 
 
@@ -182,10 +186,6 @@ three_prisoners = (p1, p2, p3)
 
 pi, status = nash(three_prisoners; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
 =#
-for p in eachindex(pi)
-    println("pi_$p = ", round.(pi[p]; digits=5))
-end
-
 #ipi, ipig = runtest(5, seed_invert)
 
 #    bpi, bpig = runtest(5, seed_bigbad)
@@ -233,6 +233,15 @@ n = 5
 =#
 
 
+Us = (
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5)
+)
+
+pi, status = nash(Us; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
 
 using Random
 Random.seed!(3462345634)
@@ -245,7 +254,7 @@ Us = (
     randn(5, 5, 5, 5, 5)
 )
 
-pi, status = nash(Us; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
+@time pi, status = nash(Us; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
 
 for p in eachindex(pi)
     println(round.(pi[p]; digits=5))

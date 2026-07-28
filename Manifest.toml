@@ -26,7 +26,7 @@ version = "1.12.0"
 deps = ["LinearAlgebra"]
 path = "."
 uuid = "56ed5f9e-c32e-46b8-b489-5928d745fddb"
-version = "0.1.1"
+version = "0.1.4"
 
 [[deps.OpenBLAS_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]

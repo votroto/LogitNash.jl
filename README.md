@@ -3,9 +3,11 @@
 > Package is not registered yet -- it is not tested, and its API is not stable!
 
 Compute a mixed $\epsilon$-Nash equilibrium of an N-player game by tracing a logit equilibrium path satisfying
+
 $$
 \pi_{ij} = \frac{e^{tu_i(j,\pi_{-i})}}{\sum_k e^{tu_i(k,\pi_{-i})}}
 $$
+
 from a uniform profile at $t=0$ to a generically unique Nash equilibrium at infinity.
 
 The algorithm stops when either:
