@@ -12,8 +12,23 @@ from a uniform profile at $t=0$ to a generically unique Nash equilibrium at infi
 
 The algorithm stops when either:
  - ($\epsilon$-NE condition) there is no unilateral deviation from `pi` more profitable than `stop_eps`,
- - (logit condition) a solution is found for parameter `t` greater or equal to `stop_t`,
+ - (logit condition) a solution is found for the precision parameter `t` greater or equal to `stop_t`,
  - or the maximum number of iterations of `stop_iters` is reached.
+
+## Speed and Stability
+
+This implementation tries to improve on the speed and stability of `gambit-logit`. On randomly-generated (normally-distributed) five-player general-sum games with up to seven actions per player, the speedup can be significant:
+
+![speedup](assets/speedup.png)
+
+a representative slate of 22 distributions from GAMUT for six-player five-action games is shown below.
+
+![GAMUT](assets/gamut.png)
+
+Note that this is not a direct port of `gambit-logit`. The path following algorithm, as well as the profile encoding is different. Compare the path tracing behavior on the game of Bach or Stravinsky:
+
+![GAMUT](assets/bach_or_stravinsky.png)
+
 ## Install
 
 Install the package directly from GitHub by running:
@@ -49,6 +64,17 @@ pi_3 = [0.0, 1.0]
 - *The project is a work-in-progress. Feedback is welcome, so is help.*
 - *The Jacobian Kernels are specialized per the number of players. The first time an N-player game is solved will incur a compilation time penalty.*
 - *There is no specialization for zero-sum games. A reasonable linear program will always be faster.*
+
+## TBD
+
+There is still room for improvement.
+
+ 1. There is currently no endgame implemented. Increasing the target precision parameter significantly past $10^6$ increases the likelihood of failure due to floating-point noise. A switch to a complementarity-based formulation could quickly improve the NE approximations by two orders of magnitude.
+ 2. The Jacobians are recomputed at every Newton iteration.
+ 3. There are a lot of pointless and repeated calculations in the algorithm.
+ 4. There is no parallelization (except for any done by BLAC/LAPACK).
+ 5. If the paths are smooth, the predictor can likely be improved massively.
+ 6. There is no pre-processing, such as removal of dominated strategies.
 
 ## Acknowledgements
 

@@ -151,111 +151,23 @@ function check_equilibrium(
     max_deviation_incentive(deviations, pi)
 end
 
-#=
 
-ra = rand(Int64, 1000)
-for i in 1:1000
-    if i%10==0
-        println(i)
-    end
-    runtest(5, ra[i])
-end
+   A::Matrix{Float64} = [1 -1; -1 1]
+    B::Matrix{Float64} = [-1 1; 1 -1]
+
+payoffs = (A, B)
+
+tj = @timed pi, status = nash(payoffs; stop_eps=0.0, stop_iters=10000)
 
 
- A::Matrix{Float64} = [3 0; 0 2]
-    B::Matrix{Float64} = [2 0; 0 3]
-    Us = (A, B)
-    pi, status = nash(Us)
+io = export_gambit_format_buf(payoffs)
+tc = @timed pigstr = gambit_equilibrium(io)
+pig = parse_gambit_output(pigstr, payoffs)
 
+print_strats(pi)
 
-    io = export_gambit_format_buf(Us)
-    tc = @timed pigstr = gambit_equilibrium(io)
-    pig = parse_gambit_output(pigstr, Us)
-
-for p in eachindex(pi)
-    println("pi_$p = ", round.(pi[p]; digits=5))
-end
-=#
-    #=
-
-
-p1 = Float64[3 1; 5 2;;; 1 0; 2 1]
-p2 = Float64[3 5; 1 2;;; 1 2; 0 1]
-p3 = Float64[3 1; 1 0;;; 5 2; 2 1]
-three_prisoners = (p1, p2, p3)
-
-pi, status = nash(three_prisoners; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
-=#
-#ipi, ipig = runtest(5, seed_invert)
-
-#    bpi, bpig = runtest(5, seed_bigbad)
+println()
+print_strats(pig)
 
 
 
-#=
-seed_disagree =  4219951271420067762
-
-seed_invert = -1266070885943056040
-seed_bigbad = 5605519460181864334
-seed_slow = -8273187459698682571
-
-Random.seed!(seed_invert)
-n = 5
-    Us = (
-        randn(n,n,n,n,n),
-        randn(n,n,n,n,n),
-        randn(n,n,n,n,n),
-        randn(n,n,n,n,n),
-        randn(n,n,n,n,n)
-    )
-
-    tj = @timed pi, status = nash(Us; stop_eps=0.0, stop_iters=10000)
-
-
-    io = export_gambit_format_buf(Us)
-    tc = @timed pigstr = gambit_equilibrium(io)
-    pig = parse_gambit_output(pigstr, Us)
-
-    #ipi, ipig = runtest(5, seed_invert)
-
-    #    bpi, bpig = runtest(5, seed_bigbad)
-=#
-#inversion
-
-#=
-[0.21543, 0.28827, 0.26213, 0.1211, 0.11307]
-[0.0, 0.00699, 0.05883, 0.31778, 0.6164]
-[0.0, 0.0, 0.0, 0.73337, 0.26663]
-[0.32376, 0.0, 0.0, 0.34957, 0.32667]
-[0.105, 0.45382, 0.0, 0.0, 0.44118]
-
-
-=#
-
-
-Us = (
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5)
-)
-
-pi, status = nash(Us; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
-
-using Random
-Random.seed!(3462345634)
-
-Us = (
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5)
-)
-
-@time pi, status = nash(Us; stop_iters=1000, stop_t=1e6, stop_eps=1e-6)
-
-for p in eachindex(pi)
-    println(round.(pi[p]; digits=5))
-end
