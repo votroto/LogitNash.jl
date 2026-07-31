@@ -314,9 +314,6 @@ function nash(
                 iteration += 1
             end
         end
-
-        println(t)
-        println(round.(vcat(ws.pi...);digits=3))
     end
 
     return ws.pi, (; t, iteration, regret, stall)
