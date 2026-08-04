@@ -23,8 +23,8 @@ function coordination_risk_dominant_eq(payoffs::NTuple{2})
 end
 
 function e2e_battle_of_the_sexes()
-    A::Matrix{Float64} = [3 0; 0 2]
-    B::Matrix{Float64} = [2 0; 0 3]
+    A = Float64[3 0; 0 2]
+    B = Float64[2 0; 0 3]
     payoffs = (A, B)
     pi, status = nash(payoffs)
 
@@ -35,8 +35,8 @@ function e2e_battle_of_the_sexes()
 end
 
 function e2e_coordination_wiki()
-    A::Matrix{Float64} = [2 1; 1 2]
-    B::Matrix{Float64} = [4 3; 3 4]
+    A = Float64[2 1; 1 2]
+    B = Float64[4 3; 3 4]
     payoffs = (A, B)
     pi, status = nash(payoffs)
 
@@ -47,8 +47,8 @@ function e2e_coordination_wiki()
 end
 
 function e2e_coordination_pure()
-    A::Matrix{Float64} = [8 0; 0 8]
-    B::Matrix{Float64} = [8 0; 0 8]
+    A = Float64[8 0; 0 8]
+    B = Float64[8 0; 0 8]
     payoffs = (A, B)
     pi, status = nash(payoffs)
 
@@ -59,8 +59,8 @@ function e2e_coordination_pure()
 end
 
 function e2e_coordination_assurance()
-    A::Matrix{Float64} = [8 0; 0 5]
-    B::Matrix{Float64} = [8 0; 0 5]
+    A = Float64[8 0; 0 5]
+    B = Float64[8 0; 0 5]
     payoffs = (A, B)
     pi, status = nash(payoffs)
 
@@ -71,8 +71,8 @@ function e2e_coordination_assurance()
 end
 
 function e2e_stag_hunt()
-    A::Matrix{Float64} = [8 0; 7 5]
-    B::Matrix{Float64} = [8 7; 0 5]
+    A = Float64[8 0; 7 5]
+    B = Float64[8 7; 0 5]
     payoffs = (A, B)
     pi, status = nash(payoffs)
 
@@ -83,8 +83,8 @@ function e2e_stag_hunt()
 end
 
 function e2e_prisonners_dilemma()
-    A::Matrix{Float64} = [5 0; 8 1]
-    B::Matrix{Float64} = [5 8; 0 1]
+    A = Float64[5 0; 8 1]
+    B = Float64[5 8; 0 1]
     payoffs = (A, B)
     pi, status = nash(payoffs)
 
@@ -95,8 +95,8 @@ function e2e_prisonners_dilemma()
 end
 
 function e2e_matching_pennies()
-    A::Matrix{Float64} = [1 -1; -1 1]
-    B::Matrix{Float64} = [-1 1; 1 -1]
+    A = Float64[1 -1; -1 1]
+    B = Float64[-1 1; 1 -1]
     payoffs = (A, B)
     pi, status = nash(payoffs)
 
@@ -107,8 +107,8 @@ function e2e_matching_pennies()
 end
 
 function e2e_guessing()
-    util1::Matrix{Float64} = [0 1 4; 1 0 1; 4 1 0]
-    payoffs = (util1, -util1)
+    U1 = Float64[0 1 4; 1 0 1; 4 1 0]
+    payoffs = (U1, -U1)
     pi, status = nash(payoffs)
 
     actual = util2d(payoffs, pi)
@@ -125,6 +125,19 @@ function e2e_constant()
     @test actual ≈ expect atol=1e-4
 end
 
+function e2e_three_prisoner_dilemma()
+    U1 = Float64[3 1; 5 2;;; 1 0; 2 1]
+    U2 = Float64[3 5; 1 2;;; 1 2; 0 1]
+    U3 = Float64[3 1; 1 0;;; 5 2; 2 1]
+    payoffs = (U1, U2, U3)
+
+    pi, status = nash(payoffs)
+
+    @test pi[1] ≈ [0, 1] atol=1e-4
+    @test pi[2] ≈ [0, 1] atol=1e-4
+    @test pi[3] ≈ [0, 1] atol=1e-4
+end
+
 @testset "Basic games with known solutions" begin
     e2e_battle_of_the_sexes()
     e2e_constant()
@@ -135,4 +148,5 @@ end
     e2e_matching_pennies()
     e2e_prisonners_dilemma()
     e2e_stag_hunt()
+    e2e_three_prisoner_dilemma()
 end

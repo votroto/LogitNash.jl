@@ -151,23 +151,26 @@ function check_equilibrium(
     max_deviation_incentive(deviations, pi)
 end
 
+using Random
+Random.seed!(34873478)
 
-   A::Matrix{Float64} = [1 -1; -1 1]
-    B::Matrix{Float64} = [-1 1; 1 -1]
+A::Matrix{Float64} = zeros(2,2) #*floatmin()
+B::Matrix{Float64} = zeros(2,2) #*floatmin()
 
 payoffs = (A, B)
 
-tj = @timed pi, status = nash(payoffs; stop_eps=0.0, stop_iters=10000)
+@show pi, status = nash(payoffs; stop_eps=-1.0, stop_iters=10000, stop_t=Inf)
 
 
+print_strats(pi)
+#=
 io = export_gambit_format_buf(payoffs)
 tc = @timed pigstr = gambit_equilibrium(io)
 pig = parse_gambit_output(pigstr, payoffs)
-
-print_strats(pi)
 
 println()
 print_strats(pig)
 
 
 
+=#
