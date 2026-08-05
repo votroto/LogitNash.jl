@@ -41,7 +41,7 @@ jobs:
           {
             "schemaVersion": 1,
             "label": "coverage",
-            "message": "${COVERAGE}%",
+            "message": "${COVERAGE} %",
             "color": "${COLOR}"
           }
           EOF
