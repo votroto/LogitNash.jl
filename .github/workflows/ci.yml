@@ -13,7 +13,7 @@ jobs:
 
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.11'
+          version: '1'
 
       - uses: julia-actions/julia-buildpkg@v1
 
@@ -30,13 +30,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: "7cc2561e5897bc8c43270ce659b45199"
         run: |
-          # 1. Parse coverage.info instantly using awk
           COVERAGE=$(awk '/^LF:/ { total += substr($0,4) } /^LH:/ { hit += substr($0,4) } END { if (total > 0) printf "%.2f", (hit / total) * 100; else print "0.00" }' coverage.info)
+          COLOR=$(awk -v cov="$COVERAGE" 'BEGIN { if(cov == 100) print "brightgreen"; else if (cov >= 90) print "yellow"; else print "red" }')
 
-          # 2. Assign badge color dynamically
-          COLOR=$(awk -v cov="$COVERAGE" 'BEGIN { if(cov >= 90) print "brightgreen"; else if (cov >= 75) print "yellow"; else print "red" }')
-
-          # 3. Build Shields.io JSON
+          # shields.io
           cat << EOF > LogitNashCoverage.json
           {
             "schemaVersion": 1,
@@ -46,5 +43,4 @@ jobs:
           }
           EOF
 
-          # 4. Push directly to Gist via GitHub CLI
           gh gist edit "$GIST_ID" --filename LogitNashCoverage.json LogitNashCoverage.json
