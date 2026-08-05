@@ -1,3 +1,6 @@
+# julia --project=. -e 'using Pkg; Pkg.test(julia_args=["--code-coverage=coverage.info","--code-coverage=@src"])'
+# genhtml coverage.info --output-directory /tmp/LogitNash_coverage
+
 using Test
 using LogitNash
 using LinearAlgebra

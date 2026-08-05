@@ -128,14 +128,6 @@ under the mixed strategy profile `pi` without any heap allocations.
     U::NTuple{N,Array{T,N}},
     pi::NTuple{N,Vector{T}}
 ) where {N,T}
-    if N == 1
-        return quote
-            @inbounds for a1 in 1:size(U[1], 1)
-                out[1][a1] = U[1][a1]
-            end
-        end
-    end
-
     exprs = []
     for i in 1:N
         # We loop over dimensions in descending order of memory access (N down to 1)

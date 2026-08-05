@@ -1,6 +1,8 @@
 # LogitNash.jl
 
-> Package is not registered yet -- it is not tested, and its API is not stable!
+![Coverage](https://img.shields.io/endpoint?url=https://gist.github.com/votroto/7cc2561e5897bc8c43270ce659b45199/raw/coverage.json)
+
+> Package is not registered yet -- it is minimally tested, and its API is not stable!
 
 Compute a mixed $\epsilon$-Nash equilibrium of an N-player game by tracing a logit equilibrium path satisfying
 
