@@ -72,7 +72,7 @@ There is still room for improvement.
  1. There is currently no endgame implemented. Increasing the target precision parameter significantly past $10^6$ increases the likelihood of failure due to floating-point noise. A switch to a complementarity-based formulation could quickly improve the NE approximations by two orders of magnitude.
  2. The Jacobians are recomputed at every Newton iteration.
  3. There are a lot of pointless and repeated calculations in the algorithm.
- 4. There is no parallelization (except for any done by BLAC/LAPACK).
+ 4. There is no parallelization (except for any done by BLAS/LAPACK).
  5. If the paths are smooth, the predictor can likely be improved massively.
  6. There is no pre-processing, such as removal of dominated strategies.
 
