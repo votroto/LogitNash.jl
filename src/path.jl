@@ -37,13 +37,6 @@ function fast_lu!(A::Matrix{Float64}, ipiv::Vector{BlasInt})
     return A
 end
 
-_zero_nested!(x::AbstractArray) = fill!(x, zero(eltype(x)))
-function _zero_nested!(t::Tuple)
-    for ti in t
-        _zero_nested!(ti)
-    end
-end
-
 function predict!(
     dx_out::Vector{Float64},
     x::Vector{Float64},
@@ -53,9 +46,6 @@ function predict!(
     utils::NTuple{N},
     ws
 ) where {N}
-    _zero_nested!(ws.ubar)
-    _zero_nested!(ws.dudpi)
-
     mu = splitviews(x, size(first(utils)) .- 1)
     redlograt_to_prob!.(ws.pi, mu)
 
@@ -128,9 +118,6 @@ function correct!(
     local_det_sign = ws.det_sign[1]
 
     while true
-        fill!(ws.res, 0.0)
-        _zero_nested!(ws.ubar)
-
         mu = splitviews(ws.x_nxt, size(first(utils)) .- 1)
         redlograt_to_prob!.(ws.pi, mu)
 
@@ -145,8 +132,6 @@ function correct!(
             ws.det_sign[1] = local_det_sign
             return true, ws.x_nxt, t_out
         end
-
-        _zero_nested!(ws.dudpi)
 
         unilateral_derivatives!(ws.dudpi, utils, ws.pi)
         jacobian_x!(ws.Fx, ws.pi, t_out, ws.dudpi, utils)

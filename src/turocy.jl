@@ -1,42 +1,45 @@
-
 function build_deriv_loops(dims, idx, prev_p, p, q, N)
     d = dims[idx]
     var_ad = Symbol("a", d)
+    var_ap = Symbol("a", p)
+    var_aq = Symbol("a", q)
 
     if idx == length(dims)
-        # Innermost loop
+        # --- INNERMOST LOOP (always d = 1) ---
         u_args = [Symbol("a", k) for k in 1:N]
         pay_idx = Expr(:ref, :pay_p, u_args...)
 
-        # If dimension is p or q, we don't multiply a probability
-        p_term = if d == p || d == q
-            prev_p
-        else
-            prev_p === nothing ? :(pi[$d][$var_ad]) : :(pi[$d][$var_ad] * $prev_p)
-        end
+        if d == p || d == q
+            # Case A: Innermost loop varies an output index.
+            # Safe to write directly to res_pq.
+            body = if prev_p === nothing
+                quote @inbounds res_pq[$var_ap, $var_aq] += $pay_idx end
+            else
+                quote @inbounds res_pq[$var_ap, $var_aq] += $pay_idx * $prev_p end
+            end
 
-        var_ap = Symbol("a", p)
-        var_aq = Symbol("a", q)
-
-        body = if p_term === nothing
-            quote
-                @inbounds res_pq[$var_ap, $var_aq] += $pay_idx
+            return quote
+                @simd for $var_ad in 1:size(pay_p, $d)
+                    $body
+                end
             end
         else
-            quote
-                @inbounds res_pq[$var_ap, $var_aq] += $pay_idx * $p_term
-            end
-        end
+            # Case B: Innermost loop is a marginalized dimension.
+            # Output indices are constant. Use a scalar accumulator for SIMD!
+            p_term = prev_p === nothing ? :(pi[$d][$var_ad]) : :($prev_p * pi[$d][$var_ad])
 
-        return quote
-            @simd for $var_ad in 1:size(pay_p, $d)
-                $body
+            return quote
+                s = zero(eltype(res_pq))
+                @simd for $var_ad in 1:size(pay_p, $d)
+                    @inbounds s += $pay_idx * $p_term
+                end
+                @inbounds res_pq[$var_ap, $var_aq] += s
             end
         end
     else
-        # Not innermost
+        # --- OUTER LOOPS ---
         if d == p || d == q
-            # Skip probability multiplication for this dimension, just pass state down
+            # Skip probability multiplication for output dimensions
             inner_loop = build_deriv_loops(dims, idx + 1, prev_p, p, q, N)
 
             return quote
@@ -45,6 +48,7 @@ function build_deriv_loops(dims, idx, prev_p, p, q, N)
                 end
             end
         else
+            # Multiply probability for marginalized dimensions
             new_p = Symbol("p", d)
             p_expr = prev_p === nothing ? :(pi[$d][$var_ad]) : :($prev_p * pi[$d][$var_ad])
             inner_loop = build_deriv_loops(dims, idx + 1, new_p, p, q, N)
@@ -75,6 +79,7 @@ end
             push!(exprs, quote
                 res_pq = result[$p][$q]
                 pay_p = payoffs[$p]
+                fill!(res_pq, zero(eltype(res_pq)))
                 $inner_loops_expr
             end)
         end
@@ -83,36 +88,21 @@ end
     return Expr(:block, exprs...)
 end
 
-function build_deviation_loops(dims, idx, prev_p, N, i, acc_sym=nothing)
+function build_deviation_loops(dims, idx, prev_p, N, i)
     d = dims[idx]
     var_ad = Symbol("a", d)
 
     if idx == length(dims)
         # --- INNERMOST LOOP (always a1) ---
-        u_args = [Symbol("a", k) for k in 1:N]
-        u_idx = Expr(:ref, :U_i, u_args...)
+        u_idx = Expr(:ref, :U_i, [Symbol("a", k) for k in 1:N]...)
 
-        p_term = if d == i
-            prev_p
+        if d == i
+            # Player 1: a1 is innermost, accumulate directly into out_i[a1]
+            body = quote out_i[$var_ad] += $u_idx * $prev_p end
         else
-            prev_p == :one ? :(pi[$d][$var_ad]) : :($prev_p * pi[$d][$var_ad])
-        end
-
-        body = if d == i
-            # Player 1: a1 is innermost. We can write directly to out_i[a1]
-            # because the index varies contiguously.
-            if p_term == :one
-                quote out_i[$var_ad] += $u_idx end
-            else
-                quote out_i[$var_ad] += $u_idx * $p_term end
-            end
-        else
-            # Players 2-N: accumulate into the fast scalar register!
-            if p_term == :one
-                quote $acc_sym += $u_idx end
-            else
-                quote $acc_sym += $u_idx * $p_term end
-            end
+            # Players 2-N: accumulate into scalar s
+            p_term = prev_p == :one ? :(pi[$d][$var_ad]) : :($prev_p * pi[$d][$var_ad])
+            body = quote s += $u_idx * $p_term end
         end
 
         return quote
@@ -123,23 +113,18 @@ function build_deviation_loops(dims, idx, prev_p, N, i, acc_sym=nothing)
     else
         # --- OUTER LOOPS ---
         if d == i
-            # We are at player i's outer loop.
-            # Create a local scalar accumulator for the inner loops to use.
-            acc_sym_new = Symbol("s_", d)
-            inner_loop = build_deviation_loops(dims, idx + 1, prev_p, N, i, acc_sym_new)
-
+            inner_loop = build_deviation_loops(dims, idx + 1, prev_p, N, i)
             return quote
                 for $var_ad in 1:size(U_i, $d)
-                    $acc_sym_new = zero(eltype(out_i))
+                    s = zero(eltype(out_i))
                     $inner_loop
-                    # Write back to memory only ONCE per a_i iteration
-                    out_i[$var_ad] += $acc_sym_new
+                    out_i[$var_ad] += s
                 end
             end
         else
             new_p = Symbol("p", d)
             p_expr = prev_p == :one ? :(pi[$d][$var_ad]) : :($prev_p * pi[$d][$var_ad])
-            inner_loop = build_deviation_loops(dims, idx + 1, new_p, N, i, acc_sym)
+            inner_loop = build_deviation_loops(dims, idx + 1, new_p, N, i)
 
             return quote
                 for $var_ad in 1:size(U_i, $d)
