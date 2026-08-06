@@ -4,6 +4,7 @@
 
 > [!WARNING]
 > Package is not registered yet -- it is minimally tested, the code quality is low, and the API is not stable!
+<!-- or at least I think so, singe github CI is broken again...-->
 
 Compute a mixed $\epsilon$-Nash equilibrium of an N-player game by tracing a logit equilibrium path satisfying
 
