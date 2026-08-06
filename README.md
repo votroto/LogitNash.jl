@@ -1,6 +1,6 @@
 # LogitNash.jl
 
-![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/votroto/7cc2561e5897bc8c43270ce659b45199/raw/LogitNashCoverage.json)
+![Coverage](https://gist.githubusercontent.com/votroto/7cc2561e5897bc8c43270ce659b45199/raw/LogitNashCoverage.svg)
 
 > [!WARNING]
 > Package is not registered yet -- it is minimally tested, the code quality is low, and the API is not stable!

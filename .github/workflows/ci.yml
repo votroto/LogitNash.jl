@@ -29,17 +29,25 @@ jobs:
           GIST_ID: "7cc2561e5897bc8c43270ce659b45199"
         run: |
           COVERAGE=$(awk '/^LF:/ { total += substr($0,4) } /^LH:/ { hit += substr($0,4) } END { if (total > 0) printf "%.2f", (hit / total) * 100; else print "0.00" }' coverage.info)
-          COLOR=$(awk -v cov="$COVERAGE" 'BEGIN { if(cov == 100) print "brightgreen"; else if (cov >= 90) print "yellow"; else print "red" }')
+          COLOR=$(awk -v cov="$COVERAGE" 'BEGIN { if(cov == 100) print "#4ADE80"; else if (cov >= 90) print "#FDE047"; else print "#F87171" }')
 
-          # shields.io json format
-          cat << EOF > coverage.json
-          {
-            "schemaVersion": 1,
-            "label": "Coverage",
-            "message": "${COVERAGE} %",
-            "color": "${COLOR}"
-          }
+          cat << EOF > coverage.svg
+          <svg xmlns="http://www.w3.org/2000/svg" width="120" height="20">
+            <clipPath id="r">
+              <rect width="120" height="20" rx="2"/>
+            </clipPath>
+
+            <g clip-path="url(#r)">
+              <rect width="60" height="20" fill="#333"/>
+              <rect x="60" width="60" height="20" fill="${COLOR}"/>
+            </g>
+
+            <g text-anchor="middle" font-family="monospace" font-size="10" dominant-baseline="central">
+              <text x="30" y="10" fill="#fff">Coverage</text>
+              <text x="90" y="10">${COVERAGE} %</text>
+            </g>
+          </svg>
           EOF
 
           echo "Coverage: $COVERAGE %"
-          gh gist edit "$GIST_ID" --filename LogitNashCoverage.json coverage.json
+          gh gist edit "$GIST_ID" --filename LogitNashCoverage.svg coverage.svg
