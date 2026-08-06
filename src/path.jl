@@ -3,7 +3,7 @@ using LinearAlgebra: BlasInt
 using LinearAlgebra.BLAS: @blasfunc
 using LinearAlgebra.LAPACK: liblapack
 
-function validate_game(utils::NTuple{N,AbstractArray{F,N}}) where {F,N}
+function validate_game(utils::NTuple{N,AbstractArray}) where N
     if N <= 1
         throw(ArgumentError("A normal-form game must have at least 2 players; got N = $N."))
     end
@@ -31,6 +31,7 @@ function fast_lu!(A::Matrix{Float64}, ipiv::Vector{BlasInt})
     A, ipiv, info = LinearAlgebra.LAPACK.getrf!(A, ipiv)
 
     if info > 0
+        # TODO: Don't throw, gracefully return last solution
         throw(SingularException(info))
     end
     return A
@@ -41,33 +42,6 @@ function _zero_nested!(t::Tuple)
     for ti in t
         _zero_nested!(ti)
     end
-end
-
-function make_hc_workspace(x_template::Vector{Float64}, utils::NTuple{N}) where {N}
-    T = eltype(x_template)
-    n = length(x_template)
-    rsize = sum(size(first(utils), i) - 1 for i in eachindex(utils))
-
-    pi = ntuple(i -> Vector{T}(undef, size(utils[i], i)), Val(N))
-    res = Vector{T}(undef, rsize)
-    ubar = ntuple(i -> zeros(T, size(utils[i], i)), Val(N))
-    dudpi = ntuple(p -> ntuple(q -> zeros(T, size(utils[p], p), size(utils[p], q)), Val(N)), Val(N))
-
-    J_aug = zeros(T, n + 1, n + 1)
-    Fx = view(J_aug, 1:n, 1:n)
-    Ft = view(J_aug, 1:n, n + 1)
-    ipiv = Vector{BlasInt}(undef, n + 1)
-
-    rhs_aug = Vector{T}(undef, n + 1)
-
-    xpred = Vector{T}(undef, n)
-    x_diff = Vector{T}(undef, n)
-    dx_step = Vector{T}(undef, n)
-    x_nxt = Vector{Float64}(undef, n)
-
-    det_sign = Float64[0.0]
-
-    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign)
 end
 
 function predict!(
@@ -254,6 +228,32 @@ function correct!(
     end
 end
 
+function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {N}
+    T = eltype(x_template)
+    n = length(x_template)
+    rsize = sum(dims[i] - 1 for i in 1:N)
+
+    pi = ntuple(i -> Vector{T}(undef, dims[i]), Val(N))
+    res = Vector{T}(undef, rsize)
+    ubar = ntuple(i -> zeros(T, dims[i]), Val(N))
+    dudpi = ntuple(p -> ntuple(q -> zeros(T, dims[p], dims[q]), Val(N)), Val(N))
+
+    J_aug = zeros(T, n + 1, n + 1)
+    Fx = view(J_aug, 1:n, 1:n)
+    Ft = view(J_aug, 1:n, n + 1)
+    ipiv = Vector{BlasInt}(undef, n + 1)
+
+    rhs_aug = Vector{T}(undef, n + 1)
+
+    xpred = Vector{T}(undef, n)
+    x_diff = Vector{T}(undef, n)
+    dx_step = Vector{T}(undef, n)
+    x_nxt = Vector{Float64}(undef, n)
+
+    det_sign = Float64[0.0]
+
+    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign)
+end
 
 """
     nash(utils::NTuple{N,AbstractArray{Float64,N}}; stop_iters::Int=1000, stop_t::Float64=1e6, stop_eps::Float64=1e-6) where {N}
@@ -278,7 +278,7 @@ function nash(
     regret = NaN
     stall = false
 
-    ws = make_hc_workspace(x, utils)
+    ws = make_hc_workspace(x, size(first(utils)))
 
     while t <= stop_t && iteration <= stop_iters && !stall
         dx, dt = predict!(dx, x, t, dx, dt, utils, ws)

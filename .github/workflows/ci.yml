@@ -17,14 +17,12 @@ jobs:
 
       - uses: julia-actions/julia-buildpkg@v1
 
-      # Run tests with native LCOV generation
       - name: Run Tests and Generate Coverage
         run: |
-          julia --project=. -e 'using Pkg; Pkg.test(julia_args=["--code-coverage=coverage.info","--code-coverage=@src"])'
+          julia --project=. --color=yes -e 'using Pkg; Pkg.test(julia_args=["--code-coverage=coverage.info","--code-coverage=@src","--check-bounds=yes"])'
 
-      # Parse the LCOV file and update the Gist
-      - name: Update Coverage Gist
-        # Prevent PRs from polluting your main branch badge
+      - name: Update Coverage Badge Gist
+        # Prevent PRs from polluting the coverage badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -33,8 +31,8 @@ jobs:
           COVERAGE=$(awk '/^LF:/ { total += substr($0,4) } /^LH:/ { hit += substr($0,4) } END { if (total > 0) printf "%.2f", (hit / total) * 100; else print "0.00" }' coverage.info)
           COLOR=$(awk -v cov="$COVERAGE" 'BEGIN { if(cov == 100) print "brightgreen"; else if (cov >= 90) print "yellow"; else print "red" }')
 
-          # shields.io
-          cat << EOF > LogitNashCoverage.json
+          # shields.io json format
+          cat << EOF > coverage.json
           {
             "schemaVersion": 1,
             "label": "Coverage",
@@ -43,4 +41,5 @@ jobs:
           }
           EOF
 
-          gh gist edit "$GIST_ID" --filename LogitNashCoverage.json LogitNashCoverage.json
+          echo "Coverage: $COVERAGE %"
+          gh gist edit "$GIST_ID" --filename LogitNashCoverage.json coverage.json

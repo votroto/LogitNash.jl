@@ -103,10 +103,10 @@ function runtest(n, seed)
 
     tj = @timed pi, status = nash(Us; stop_eps=0.0)
 
-        if status.regret >= 1e-4 || status.t <= 100 || status.stall ==true # !all(norm.(pi .- pig) .<= 1e-5)
-            @show status
-            println(seed)
-        end
+    if status.regret >= 1e-4 || status.t <= 100 || status.stall == true # !all(norm.(pi .- pig) .<= 1e-5)
+        @show status
+        println(seed)
+    end
     #
     return true
     io = export_gambit_format_buf(Us)
@@ -151,18 +151,43 @@ function check_equilibrium(
     max_deviation_incentive(deviations, pi)
 end
 
+Us = (
+    randn(2, 2, 2, 2, 2),
+    randn(2, 2, 2, 2, 2),
+    randn(2, 2, 2, 2, 2),
+    randn(2, 2, 2, 2, 2),
+    randn(2, 2, 2, 2, 2)
+)
+
+nash(Us)
+
 using Random
-Random.seed!(34873478)
+Random.seed!(3462345634)
+
+Us = (
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5),
+    randn(5, 5, 5, 5, 5)
+)
+
+
+@time pi,status = nash(Us)
+print_strats(pi)
+#=
+
 
 A::Matrix{Float64} = zeros(2,2) #*floatmin()
 B::Matrix{Float64} = zeros(2,2) #*floatmin()
 
 payoffs = (A, B)
 
-@show pi, status = nash(payoffs; stop_eps=-1.0, stop_iters=10000, stop_t=Inf)
+@show pi, status = nash(payoffs; stop_eps=-1.0, stop_iters=10000, stop_t=1e6)
 
 
 print_strats(pi)
+=#
 #=
 io = export_gambit_format_buf(payoffs)
 tc = @timed pigstr = gambit_equilibrium(io)

@@ -2,7 +2,8 @@
 
 ![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/votroto/7cc2561e5897bc8c43270ce659b45199/raw/LogitNashCoverage.json)
 
-> Package is not registered yet -- it is minimally tested, and its API is not stable!
+> [!WARNING]
+> Package is not registered yet -- it is minimally tested, the code quality is low, and the API is not stable!
 
 Compute a mixed $\epsilon$-Nash equilibrium of an N-player game by tracing a logit equilibrium path satisfying
 
@@ -77,6 +78,7 @@ There is still room for improvement.
  4. There is no parallelization (except for any done by BLAS/LAPACK).
  5. If the paths are smooth, the predictor can likely be improved massively.
  6. There is no pre-processing, such as removal of dominated strategies.
+ 7. All the kernels are optimized only for dense floating-point utilities.
 
 ## Acknowledgements
 

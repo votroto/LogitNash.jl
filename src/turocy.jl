@@ -60,11 +60,10 @@ function build_deriv_loops(dims, idx, prev_p, p, q, N)
 end
 
 @generated function unilateral_derivatives!(
-    result::NTuple{N,NTuple{N,Matrix{T}}},
-    payoffs::NTuple{N,Array{T,N}},
-    pi::NTuple{N,Vector{T}}
-) where {N,T}
-
+    result::NTuple{N,NTuple{N,Matrix}},
+    payoffs::NTuple{N,Array{<:Real,N}},
+    pi::NTuple{N,Vector}
+) where N
     exprs = []
 
     for p in 1:N
@@ -84,18 +83,36 @@ end
     return Expr(:block, exprs...)
 end
 
-function build_deviation_loops(i, dims, idx, prev_p, N)
+function build_deviation_loops(dims, idx, prev_p, N, i, acc_sym=nothing)
     d = dims[idx]
     var_ad = Symbol("a", d)
 
     if idx == length(dims)
-        # Innermost loop
+        # --- INNERMOST LOOP (always a1) ---
         u_args = [Symbol("a", k) for k in 1:N]
         u_idx = Expr(:ref, :U_i, u_args...)
-        p_term = prev_p == :one ? :(pi[$d][$var_ad]) : :(pi[$d][$var_ad] * $prev_p)
 
-        body = quote
-            s += $u_idx * $p_term
+        p_term = if d == i
+            prev_p
+        else
+            prev_p == :one ? :(pi[$d][$var_ad]) : :($prev_p * pi[$d][$var_ad])
+        end
+
+        body = if d == i
+            # Player 1: a1 is innermost. We can write directly to out_i[a1]
+            # because the index varies contiguously.
+            if p_term == :one
+                quote out_i[$var_ad] += $u_idx end
+            else
+                quote out_i[$var_ad] += $u_idx * $p_term end
+            end
+        else
+            # Players 2-N: accumulate into the fast scalar register!
+            if p_term == :one
+                quote $acc_sym += $u_idx end
+            else
+                quote $acc_sym += $u_idx * $p_term end
+            end
         end
 
         return quote
@@ -104,47 +121,55 @@ function build_deviation_loops(i, dims, idx, prev_p, N)
             end
         end
     else
-        new_p = Symbol("p", d)
-        p_expr = prev_p == :one ? :(pi[$d][$var_ad]) : :($prev_p * pi[$d][$var_ad])
-        inner_loop = build_deviation_loops(i, dims, idx + 1, new_p, N)
+        # --- OUTER LOOPS ---
+        if d == i
+            # We are at player i's outer loop.
+            # Create a local scalar accumulator for the inner loops to use.
+            acc_sym_new = Symbol("s_", d)
+            inner_loop = build_deviation_loops(dims, idx + 1, prev_p, N, i, acc_sym_new)
 
-        return quote
-            for $var_ad in 1:size(U_i, $d)
-                $new_p = $p_expr
-                $inner_loop
+            return quote
+                for $var_ad in 1:size(U_i, $d)
+                    $acc_sym_new = zero(eltype(out_i))
+                    $inner_loop
+                    # Write back to memory only ONCE per a_i iteration
+                    out_i[$var_ad] += $acc_sym_new
+                end
+            end
+        else
+            new_p = Symbol("p", d)
+            p_expr = prev_p == :one ? :(pi[$d][$var_ad]) : :($prev_p * pi[$d][$var_ad])
+            inner_loop = build_deviation_loops(dims, idx + 1, new_p, N, i, acc_sym)
+
+            return quote
+                for $var_ad in 1:size(U_i, $d)
+                    $new_p = $p_expr
+                    $inner_loop
+                end
             end
         end
     end
 end
 
-"""
-    unilateral_deviations!(out, U, pi)
-
-Computes the expected utility for each player `i` and each pure action `j`
-under the mixed strategy profile `pi` without any heap allocations.
-"""
 @generated function unilateral_deviations!(
-    out::NTuple{N,Vector{T}},
-    U::NTuple{N,Array{T,N}},
-    pi::NTuple{N,Vector{T}}
-) where {N,T}
+    out::NTuple{N,Vector},
+    U::NTuple{N,Array{<:Real,N}},
+    pi::NTuple{N,Vector}
+) where {N}
     exprs = []
-    for i in 1:N
-        # We loop over dimensions in descending order of memory access (N down to 1)
-        # excluding the player's own dimension `i`, which is handled by the outermost loop.
-        dims = filter(k -> k != i, N:-1:1)
-        var_ai = Symbol("a", i)
+    dims = N:-1:1
 
-        inner_loops_expr = build_deviation_loops(i, dims, 1, :one, N)
+    for i in 1:N
+        inner_loops_expr = build_deviation_loops(dims, 1, :one, N, i)
 
         push!(exprs, quote
             out_i = out[$i]
             U_i = U[$i]
-            fill!(out_i, zero(T))
-            @inbounds for $var_ai in 1:size(U_i, $i)
-                s = zero(T)
+
+            fill!(out_i, zero(eltype(out_i)))
+
+            @inbounds begin
                 $inner_loops_expr
-                out_i[$var_ai] = s
             end
         end)
     end
