@@ -4,7 +4,6 @@
 
 > [!WARNING]
 > Package is not registered yet -- it is minimally tested, the code quality is low, and the API is not stable!
-<!-- or at least I think so, singe github CI is broken again...-->
 
 Compute a mixed $\epsilon$-Nash equilibrium of an N-player game by tracing a logit equilibrium path satisfying
 
@@ -21,17 +20,9 @@ The algorithm stops when either:
 
 ## Speed and Stability
 
-This implementation tries to improve on the speed and stability of `gambit-logit`. On randomly-generated (normally-distributed) five-player general-sum games with up to seven actions per player, the speedup can be significant:
+On some benchmarks, *LogitNash.jl* runs **48 times faster** than *gambit-logit*!
 
-![speedup](assets/speedup.png)
-
-a representative slate of 22 distributions from GAMUT for six-player five-action games is shown below.
-
-![GAMUT](assets/gamut.png)
-
-Note that this is not a direct port of `gambit-logit`. The path following algorithm, as well as the profile encoding is different. Compare the path tracing behavior on the game of Bach or Stravinsky:
-
-![GAMUT](assets/bach_or_stravinsky.png)
+For more details, check out the preliminary [benchmarks](https://github.com/votroto/LogitNash.jl/wiki/Benchmarks) on *Gamut* game classes.
 
 ## Install
 
@@ -69,7 +60,7 @@ pi_3 = [0.0, 1.0]
 - *The Jacobian Kernels are specialized per the number of players. The first time an N-player game is solved will incur a compilation time penalty.*
 - *There is no specialization for zero-sum games. A reasonable linear program will always be faster.*
 
-## TBD
+### TBD
 
 There is still room for improvement.
 
