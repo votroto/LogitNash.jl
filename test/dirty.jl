@@ -151,30 +151,42 @@ function check_equilibrium(
     max_deviation_incentive(deviations, pi)
 end
 
-Us = (
-    randn(2, 2, 2, 2, 2),
-    randn(2, 2, 2, 2, 2),
-    randn(2, 2, 2, 2, 2),
-    randn(2, 2, 2, 2, 2),
-    randn(2, 2, 2, 2, 2)
-)
-
-nash(Us)
 
 using Random
+
+A = 2
+D = 5
+Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
+
+pi,status = nash(Us)
+
+
+A = 2
+D = 3
+Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
+
+pi,status = nash(Us)
+
 Random.seed!(3462345634)
 
-Us = (
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5),
-    randn(5, 5, 5, 5, 5)
-)
 
+A = 5
+D = 5
+Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
 @time pi,status = nash(Us)
 print_strats(pi)
+
+
+
+A = 50
+D = 3
+Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
+
+@time pi,status = nash(Us)
+print_strats(pi)
+
+
 #=
 
 

@@ -50,9 +50,9 @@ function predict!(
     redlograt_to_prob!.(ws.pi, mu)
 
     unilateral_derivatives!(ws.dudpi, utils, ws.pi)
-    jacobian_x!(ws.Fx, ws.pi, t, ws.dudpi, utils)
+    unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, ws.pi)
 
-    unilateral_deviations!(ws.ubar, utils, ws.pi)
+    jacobian_x!(ws.Fx, ws.pi, t, ws.dudpi, utils)
     jacobian_t!(ws.Ft, ws.ubar, mu, utils)
 
     n = length(x)

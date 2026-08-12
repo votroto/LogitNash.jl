@@ -1,3 +1,37 @@
+The input is a multiplayer strategic game defined by utility tensors $(u_p)_{p \in N}$.
+
+The probability that player $q$ plays action $j$ is denoted by $\pi_q^j$.
+
+The payoff of player $p$ when deviating to action $i$ is $U_p^i$.
+
+The unilateral deviation utility of player $p$ to action $i$ is
+
+$$
+U_p^i(\pi_{-p})
+=
+\sum_{a_{-p}} u_p(i,a_{-p}) \prod_{q\neq p}\pi_q^{a_q}
+$$
+
+The derivative with respect to the probability that player $q$ plays action $j$ is
+
+$$
+\frac{\partial U_p^i}{\partial \pi_q^j}
+=
+\mathbf 1_{{p\neq q}} \sum_{a_{-(p,q)}} u_p(i,j,a_{-(p,q)}) \prod_{r\neq p,q}\pi_r^{a_r}
+$$
+
+
+
+
+
+Both are executed repeatedly in a predictor-corrector continuation loop about 100 times.
+
+In the predictor I always need both, so i construct the deviations from the derivatives.
+In the corrector there is an early exit path when the residual is good enough, and i only need the deviations for that, so i compute them first and the derivatives only if the jacobian is needed for the update.
+
+However the code is quite complex. It strikes me that permuting the dimensions so that at least one of the marginalized players is contiguous in memory could improve the code readability and lower cyclomatic complexity by making the computations more symmetric between players, while simultaneously being potentially faster. am I right?
+
+
 function build_deriv_loops(dims, idx, prev_p, p, q, N)
     d = dims[idx]
     var_ad = Symbol("a", d)
@@ -176,69 +210,4 @@ end
 
     push!(exprs, :(return out))
     return Expr(:block, exprs...)
-end
-
-function jacobian_t!(J, ubar, mu, u)
-    idx = 1
-    @inbounds for p in eachindex(u)
-        for a in eachindex(mu[p])
-            J[idx] = ubar[p][end] - ubar[p][a]
-            idx += 1
-        end
-    end
-    J
-end
-
-function residual!(out, mu, ubar, x, lambda, u)
-    idx = 1
-    @inbounds for p in eachindex(u)
-        for a in eachindex(mu[p])
-            out[idx] = mu[p][a] - lambda*(ubar[p][a] - ubar[p][end])
-            idx += 1
-        end
-    end
-    out
-end
-
-function jacobian_x!(J, pi, lam, dudpi, u::NTuple{N}) where {N}
-    eq_i = 1
-
-    @inbounds for eq_p in eachindex(u)
-        for eq_a in 1:(size(u[eq_p], eq_p)-1)
-            pd_i = 1
-
-            for pd_p in eachindex(u)
-                if pd_p == eq_p
-                    # Own-player identity block
-                    for pd_a in 1:(size(u[eq_p], eq_p)-1)
-                        J[eq_i, pd_i] = (eq_a == pd_a)
-
-                        pd_i += 1
-                    end
-                else
-                    c = 0.0
-                    for pd_a in eachindex(pi[pd_p])
-                        gm = (dudpi[eq_p][pd_p][eq_a, pd_a] - dudpi[eq_p][pd_p][end, pd_a])
-                        c += gm * pi[pd_p][pd_a]
-                    end
-
-                    for pd_a in 1:(size(u[pd_p], pd_p)-1)
-                        gm = (dudpi[eq_p][pd_p][eq_a, pd_a] - dudpi[eq_p][pd_p][end, pd_a])
-                        J[eq_i, pd_i] = -lam * pi[pd_p][pd_a] * (gm - c)
-
-                        pd_i += 1
-                    end
-                end
-            end
-
-            eq_i += 1
-        end
-    end
-
-    return J
-end
-
-function uniform_xprofile(Us)
-    nx = sum(size(Us[i], i) - 1 for i in eachindex(Us))
-    zeros(nx)
 end
