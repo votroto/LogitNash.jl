@@ -1,11 +1,7 @@
 name = "LogitNash"
 uuid = "56ed5f9e-c32e-46b8-b489-5928d745fddb"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["votroto <tomas.votroubek@outlook.com>"]
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
-
-[compat]
-LoopVectorization = "0.12.174"
