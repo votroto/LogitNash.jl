@@ -49,7 +49,7 @@ function predict!(
     mu = splitviews(x, size(first(utils)) .- 1)
     redlograt_to_prob!.(ws.pi, mu)
 
-    unilateral_derivatives!(ws.dudpi, utils, ws.pi)
+    unilateral_derivatives_optimal_simplified!(ws.dudpi, utils, ws.pi)
     unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, ws.pi)
 
     jacobian_x!(ws.Fx, ws.pi, t, ws.dudpi, utils)
@@ -133,7 +133,7 @@ function correct!(
             return true, ws.x_nxt, t_out
         end
 
-        unilateral_derivatives!(ws.dudpi, utils, ws.pi)
+        unilateral_derivatives_optimal_simplified!(ws.dudpi, utils, ws.pi)
         jacobian_x!(ws.Fx, ws.pi, t_out, ws.dudpi, utils)
         jacobian_t!(ws.Ft, ws.ubar, mu, utils)
 

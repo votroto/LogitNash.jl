@@ -121,8 +121,8 @@ function build_deriv_loops_simpler(d, last_w, p, q, N)
     var_aq = Symbol("a", q)
 
     if d == 1
-        u_args = [Symbol("a", k) for k in 1:N]
-        pay_idx = Expr(:ref, :payoff, u_args...)
+        actions = [Symbol("a", k) for k in 1:N]
+        pay_idx = Expr(:ref, :payoff, actions...)
 
         # Use a scalar accumulator for SIMD for marginalized dimension.
         if 1 == p || 1 == q
@@ -177,26 +177,13 @@ end
     end
 
     return Expr(:block, exprs...)
-end
+end#= ========================================================== =#
 
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-#=
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-
-=#
 
 
 
@@ -298,6 +285,114 @@ end
     end
 
     return Expr(:block, exprs...)
+end#= ========================================================= =#
+
+
+
+
+
+
+
+
+function build_fused_body(d, w, p, N)
+    ad = Symbol("a", d)
+
+    if d == 1
+        # Keep separate @simd loops per q so LLVM can vectorize contiguous 1D memory
+        a_all = [Symbol("a", k) for k in 1:N]
+        ap = Symbol("a", p)
+
+        q_loops = map(1:N) do q
+            q == p && return :()
+            aq = Symbol("a", q)
+            res = :(results[$p][$q])
+            wq = w[q]
+
+            if p == 1 || q == 1
+                quote
+                    @simd ivdep for a1 in 1:size(pay_p, 1)
+                        $res[$ap, $aq] += pay_p[$(a_all...)] * $wq
+                    end
+                end
+            else
+                quote
+                    s = zero(eltype($res))
+                    @simd ivdep for a1 in 1:size(pay_p, 1)
+                        s += pay_p[$(a_all...)] * $wq * pi[1][a1]
+                    end
+                    $res[$ap, $aq] += s
+                end
+            end
+        end
+        return Expr(:block, q_loops...)
+    else
+        # Outer loops: only assign weights for dimensions that aren't p or q
+        assignments = Expr[]
+        next_w = copy(w)
+
+        for q in 1:N
+            if q != p && d != p && d != q
+                w_sym = Symbol("w_d", d, "_q", q)
+                push!(assignments, :($w_sym = $(w[q]) * pi[$d][$ad]))
+                next_w[q] = w_sym
+            end
+        end
+
+        return quote
+            for $ad in 1:size(pay_p, $d)
+                $(assignments...)
+                $(build_fused_body(d - 1, next_w, p, N))
+            end
+        end
+    end
+end
+
+@generated function unilateral_derivatives_optimal_simplified!(
+    results::NTuple{N,NTuple{N,Matrix}},
+    payoffs::NTuple{N,Array{<:Real,N}},
+    pi::NTuple{N,Vector}
+) where N
+    p_blocks = map(1:N) do p
+        init_w = Any[1 for _ in 1:N]
+        body = build_fused_body(N, init_w, p, N)
+        quote
+            pay_p = payoffs[$p]
+            $body
+        end
+    end
+
+    return quote
+        for p in 1:N, q in 1:N
+            p != q && fill!(results[p][q], zero(eltype(results[p][q])))
+        end
+        @inbounds begin
+            $(p_blocks...)
+        end
+    end
+end
+
+function unilateral_derivatives_optimal_simplified_body!(
+    results::NTuple{N,NTuple{N,Matrix}},
+    payoffs::NTuple{N,Array{<:Real,N}},
+    pi::NTuple{N,Vector}
+) where N
+    p_blocks = map(1:N) do p
+        init_w = Any[1 for _ in 1:N]
+        body = build_fused_body(N, init_w, p, N)
+        quote
+            pay_p = payoffs[$p]
+            $body
+        end
+    end
+
+    return quote
+        for p in 1:N, q in 1:N
+            p != q && fill!(results[p][q], zero(eltype(results[p][q])))
+        end
+        @inbounds begin
+            $(p_blocks...)
+        end
+    end
 end
 
 #=
@@ -488,8 +583,14 @@ function unilateral_derivatives_3p_turbo!(
     @turbo for a_3 in 1:A3, a_2 in 1:A2, a_1 in 1:A1
         result[1][2][a_1, a_2] += U1[a_1, a_2, a_3] * pi3[a_3]
         result[1][3][a_1, a_3] += U1[a_1, a_2, a_3] * pi2[a_2]
+    end
+    @turbo for a_3 in 1:A3, a_2 in 1:A2, a_1 in 1:A1
+
         result[2][1][a_2, a_1] += U2[a_1, a_2, a_3] * pi3[a_3]
         result[2][3][a_2, a_3] += U2[a_1, a_2, a_3] * pi1[a_1]
+    end
+    @turbo for a_3 in 1:A3, a_2 in 1:A2, a_1 in 1:A1
+
         result[3][1][a_3, a_1] += U3[a_1, a_2, a_3] * pi2[a_2]
         result[3][2][a_3, a_2] += U3[a_1, a_2, a_3] * pi1[a_1]
     end
@@ -502,7 +603,7 @@ end
 
 
 
-A = 64
+A = 150
 D = 3
 dims = ntuple(_ -> A, D)
 Us = ntuple(_ -> randn(dims...), D);
@@ -512,21 +613,21 @@ pi = ntuple(_ -> normalize(rand(A), 1), D);
 dudpi1 = ntuple(p -> ntuple(q -> zeros(dims[p], dims[q]), D), D)
 dudpi2 = ntuple(p -> ntuple(q -> zeros(dims[p], dims[q]), D), D)
 
-unilateral_derivatives_old!(dudpi1, Us, pi)
-unilateral_derivatives_simpler!(dudpi2, Us, pi)
+unilateral_derivatives_3p!(dudpi1, Us, pi)
+unilateral_derivatives_optimal_simplified!(dudpi2, Us, pi)
 
 @show norm.(dudpi1[i] .- dudpi2[i] for i in eachindex(dudpi1))
 
 nothing
 
+Us = ntuple(_ -> randn(dims...), D);
+
+a = @benchmark unilateral_derivatives_3p!($dudpi2, $Us, data) setup=(data=ntuple(_ -> normalize(rand(A), 1), D))
+b = @benchmark unilateral_derivatives_optimal_simplified!($dudpi1, $Us, data) setup=(data=ntuple(_ -> normalize(rand(A), 1), D))
+
+
 #=
 
-@benchmark unilateral_derivatives_old!($dudpi1, $Us, $pi)
-@benchmark unilateral_derivatives_simpler!($dudpi2, $Us, $pi)
-
-=#
-
-#=
 
 A = 5
 D = 6
