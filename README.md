@@ -3,15 +3,9 @@
 ![Coverage](https://gist.githubusercontent.com/votroto/7cc2561e5897bc8c43270ce659b45199/raw/LogitNashCoverage.svg)
 
 > [!WARNING]
-> Package is not registered yet -- it is minimally tested, the code quality is low, and the API is not stable!
+> The package is in early stages of development.
 
-Compute a mixed $\epsilon$-Nash equilibrium of an N-player game by tracing a logit equilibrium path satisfying
-
-$$
-\pi_{ij} = \frac{e^{tu_i(j,\pi_{-i})}}{\sum_k e^{tu_i(k,\pi_{-i})}}
-$$
-
-from a uniform profile at $t=0$ to a generically unique Nash equilibrium at infinity.
+Compute a mixed $\epsilon$-Nash equilibrium of an N-player game by tracking a [logit equilibrium path](https://github.com/votroto/LogitNash.jl/wiki) from a uniform profile to an increasingly precise approximation of a generically unique Nash equilibrium.
 
 The algorithm stops when either:
  - ($\epsilon$-NE condition) there is no unilateral deviation from `pi` more profitable than `stop_eps`,
