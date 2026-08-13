@@ -5,6 +5,10 @@ using Test
 using LogitNash
 using LinearAlgebra
 
+# TODO: Add test to guarantee no debuging output forgotten on main!
+# Simple games should return with empty stdout and stderr.
+# (empty log with @info... too?)
+
 include("api.jl")
 
 @testset "Unit tests" begin

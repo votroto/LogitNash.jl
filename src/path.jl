@@ -27,16 +27,6 @@ function max_deviation_incentive(ubar::NTuple{N}, pi::NTuple{N}) where N
     maximum(maximum(ubar[p]) - dot(ubar[p], pi[p]) for p in 1:N)
 end
 
-function fast_lu!(A::Matrix{Float64}, ipiv::Vector{BlasInt})
-    A, ipiv, info = LinearAlgebra.LAPACK.getrf!(A, ipiv)
-
-    if info > 0
-        # TODO: Don't throw, gracefully return last solution
-        throw(SingularException(info))
-    end
-    return A
-end
-
 function predict!(
     dx_out::Vector{Float64},
     x::Vector{Float64},
@@ -66,18 +56,12 @@ function predict!(
 
     fast_lu!(ws.J_aug, ws.ipiv)
 
-    cur_det_sign = 1.0
-    n_aug = n + 1
-    @inbounds for i in 1:n_aug
-        if ws.J_aug[i, i] < 0.0
-            cur_det_sign = -cur_det_sign
-        end
-        if ws.ipiv[i] != i
-            cur_det_sign = -cur_det_sign
-        end
-    end
+    # TODO: figure out orientation initialization mathematically.
+    # (should always be 1.0? lastdx is initialized to 0...)
+
     if ws.det_sign[1] == 0.0
-        ws.det_sign[1] = cur_det_sign
+        ws.det_sign[1] = lu_det_sign(ws.J_aug, ws.ipiv)
+        println(ws.det_sign[1])
     end
 
     LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
@@ -90,6 +74,32 @@ function predict!(
     dtds = ws.rhs_aug[end] * norm_factor
 
     return dx_out, dtds
+end
+
+
+function lu_det_sign(A, ipiv)
+    s = 1.0
+
+    @inbounds for i in axes(A, 1)
+        if A[i, i] < 0.0
+            s = -s
+        end
+        if ipiv[i] != i
+            s = -s
+        end
+    end
+
+    return s
+end
+
+function fast_lu!(A::Matrix{Float64}, ipiv::Vector{BlasInt})
+    A, ipiv, info = LinearAlgebra.LAPACK.getrf!(A, ipiv)
+
+    if info > 0
+        # TODO: Don't throw! Inform tracker, let it handle it.
+        throw(SingularException(info))
+    end
+    return A
 end
 
 function correct!(
@@ -128,8 +138,13 @@ function correct!(
         r_con = dot(ws.x_diff, dx) + (t_out - tpred) * dt
 
         if dot(ws.res, ws.res) + r_con^2 < abs_tol^2
+
+            # TODO: extremely danger! This is just a global with extra steps...
+            # Return orientation explicitly lest someone forgets to set it.
+
             # Commit sign change on early exit success
             ws.det_sign[1] = local_det_sign
+
             return true, ws.x_nxt, t_out
         end
 
@@ -149,25 +164,18 @@ function correct!(
 
         fast_lu!(ws.J_aug, ws.ipiv)
 
-        # Fold Jump vs Bifurcation Detection ---
-        cur_det_sign = 1.0
-        n_aug = n + 1
-        @inbounds for j in 1:n_aug
-            if ws.J_aug[j, j] < 0.0
-                cur_det_sign = -cur_det_sign
-            end
-            if ws.ipiv[j] != j
-                cur_det_sign = -cur_det_sign
-            end
-        end
+        # The augmented Jacobian's determinant is topologically invariant along smooth curves and does not flip at folds.
+        # If we overshoot a fold, the corrector converges onto a backward-traveling branch instead.
+        # Evaluating this new local Jacobian against our fixed, forward-pointing predictor tangent creates an orientation mismatch, flipping the sign.
+        # Therefore, halving `ds` upon a sign flip rigorously detects and prevents illegitimate branch jumps.
+        cur_det_sign = lu_det_sign(ws.J_aug, ws.ipiv)
 
-        # Distinguish between jumping a fold (large ds) and hitting a bifurcation (tiny ds)
+        # Sign flip at a large `ds` suggests jumping a tight fold (decelerate),
+        # at a small `ds` we may just be crossing a bifurcation (accept flip).
         if local_det_sign != 0.0 && cur_det_sign != local_det_sign
             if ds > bifurcation_ds_tol
-                # We likely jumped a tight fold. Reject and halve ds.
                 return false, ws.x_nxt, t_out
             else
-                # ds is tiny; this is a structural bifurcation. Accept the sign flip.
                 local_det_sign = cur_det_sign
             end
         end
@@ -195,13 +203,53 @@ function correct!(
                 dist_sq += (ws.x_nxt[j] - ws.xpred[j])^2
             end
             if dist_sq > (2.0 * ds)^2
+                # TODO: Improve tests. Line occasionally not covered.
                 return false, ws.x_nxt, t_out
             end
 
+            # TODO: Same as before. Return orientation explicitly.
+
             # Step successfully converged and validated. Commit the sign lock.
             ws.det_sign[1] = local_det_sign
+
             return true, ws.x_nxt, t_out
         end
+
+
+#=
+        if step_norm < rel_tol * val_norm
+            @. ws.x_nxt += ws.dx_step
+            t_out += dt_step
+
+            dist_sq = (t_out - tpred)^2
+            @inbounds for j in 1:n
+                dist_sq += (ws.x_nxt[j] - ws.xpred[j])^2
+            end
+            if dist_sq > (2.0 * ds)^2
+                return false, ws.x_nxt, t_out
+            end
+
+            # --- NEW: Geometric Orientation Check ---
+            # Solve for the local tangent using the already-factored J_aug
+            fill!(ws.rhs_aug, 0.0)
+            ws.rhs_aug[end] = 1.0
+            LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
+
+            # Dot product: new_tangent * predictor_tangent
+            tangent_dot = ws.rhs_aug[end] * dt
+            @inbounds for j in 1:n
+                tangent_dot += ws.rhs_aug[j] * dx[j]
+            end
+
+            # If the angle is > 90 degrees, we overshot a fold and jumped branches
+            if tangent_dot < 0.0
+                return false, ws.x_nxt, t_out
+            end
+            # ----------------------------------------
+
+            return true, ws.x_nxt, t_out
+        end
+        =#
 
         if i >= iters
             return false, ws.x_nxt, t_out

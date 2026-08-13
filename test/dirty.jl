@@ -152,7 +152,8 @@ function check_equilibrium(
 end
 
 
-using Random
+
+
 
 A = 2
 D = 5
@@ -186,6 +187,9 @@ Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 @time pi,status = nash(Us)
 print_strats(pi)
 
+
+
+#nash((randn(3,4,2), randn(3,4,2),  randn(3,4,2)))
 
 #=
 
