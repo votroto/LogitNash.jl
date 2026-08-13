@@ -31,7 +31,15 @@ end
 function fast_lu_singular()
     original = zeros(5, 5)
     ipiv = Vector{LinearAlgebra.BlasInt}(undef, 5)
-    @test_throws SingularException LogitNash.fast_lu!(original, ipiv)
+    info = LogitNash.fast_lu!(original, ipiv)
+    @test info > 0
+end
+
+function fast_lu_nonsingular()
+    original = randn(5, 5)
+    ipiv = Vector{LinearAlgebra.BlasInt}(undef, 5)
+    info = LogitNash.fast_lu!(original, ipiv)
+    @test info == 0
 end
 
 function residual_wrapper(x, t, utils::NTuple{N}) where {N}
@@ -119,4 +127,5 @@ end
         residual_zero_only_at_uniform()
     end
     fast_lu_singular()
+    fast_lu_nonsingular()
 end
