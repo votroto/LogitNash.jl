@@ -146,7 +146,7 @@ function correct!(
 
     for i in 0:max_iters
         mu = splitviews(x_nxt, size(first(utils)) .- 1)
-        redlograt_to_prob!.(ws.pi, mu)
+         redlograt_to_prob!.(ws.pi, mu)
 
         unilateral_deviations!(ws.ubar, utils, ws.pi)
         residual!(ws.res, mu, ws.ubar, x_nxt, t_out, utils)
@@ -252,8 +252,8 @@ Compute an epsilon Nash equilibrium of an N-player game by tracing a logit equil
 function nash(
     utils::NTuple{N,AbstractArray{Float64,N}};
     stop_iters::Int=1000,
-    stop_t::Float64=1e6,
-    stop_eps::Float64=1e-6
+    stop_t::Float64=1e6, # TODO: rename to precision
+    stop_eps::Float64=1e-6  # TODO: rename to regret
 ) where {N}
     validate_game(utils)
 
