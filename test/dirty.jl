@@ -155,18 +155,12 @@ end
 
 
 
-A = 2
+A = 5
 D = 5
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
 pi,status = nash(Us)
 
-
-A = 2
-D = 3
-Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
-
-pi,status = nash(Us)
 
 Random.seed!(3462345634)
 
@@ -179,18 +173,22 @@ Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 print_strats(pi)
 @show status
 
-
-A = 50
-D = 3
+#=
+A = 100
+D = 2
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
+pi,status = nash(Us)
+
+Us = ntuple(_ -> rand(ntuple(_ -> A, D)...), D);
+
 @time pi,status = nash(Us)
-print_strats(pi)
+#print_strats(pi)
 
 
 
 #nash((randn(3,4,2), randn(3,4,2),  randn(3,4,2)))
-
+=#
 #=
 
 

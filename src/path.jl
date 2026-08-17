@@ -43,7 +43,9 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
     pi = ntuple(i -> Vector{T}(undef, dims[i]), Val(N))
     res = Vector{T}(undef, rsize)
     ubar = ntuple(i -> zeros(T, dims[i]), Val(N))
-    dudpi = ntuple(p -> ntuple(q -> zeros(T, dims[p], dims[q]), Val(N)), Val(N))
+        dudpi = ntuple(p -> ntuple(q -> zeros(T, dims[p], dims[q]), Val(N)), Val(N))
+    # q=1 transposed for improved memory access pattern
+#    dudpi = ntuple(p -> ntuple(q -> (q == 1) ? zeros(dims[q], dims[p]) : zeros(dims[p], dims[q]), Val(N)), Val(N))
 
     J_aug = zeros(T, n + 1, n + 1)
     Fx = view(J_aug, 1:n, 1:n)
@@ -107,10 +109,10 @@ function predict_init!(x::Vector{Float64}, t::Float64, utils::NTuple{N}, ws) whe
     mu = splitviews(x, size(first(utils)) .- 1)
     redlograt_to_prob!.(ws.pi, mu)
 
-    unilateral_derivatives!(ws.dudpi, utils, ws.pi)
-    unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, ws.pi)
+    unilateral_derivatives_fast2!(ws.dudpi, utils, ws.pi)
+    unilateral_deviations_from_derivatives2!(ws.ubar, ws.dudpi, ws.pi)
 
-    jacobian_x!(ws.Fx, ws.pi, t, ws.dudpi, utils)
+    jacobian_x3!(ws.Fx, ws.pi, t, ws.dudpi, utils)
     jacobian_t!(ws.Ft, ws.ubar, mu, utils)
 
     @inbounds for i in 1:n
@@ -127,7 +129,7 @@ function predict_init!(x::Vector{Float64}, t::Float64, utils::NTuple{N}, ws) whe
 
     nothing
 end
-
+using Printf
 function correct!(
     x_nxt::Vector{Float64},
     xpred::Vector{Float64},
@@ -147,8 +149,7 @@ function correct!(
     for i in 0:max_iters
         mu = splitviews(x_nxt, size(first(utils)) .- 1)
          redlograt_to_prob!.(ws.pi, mu)
-
-        unilateral_deviations!(ws.ubar, utils, ws.pi)
+       unilateral_deviations!(ws.ubar, utils, ws.pi)
         residual!(ws.res, mu, ws.ubar, x_nxt, t_out, utils)
 
         @. ws.x_diff = x_nxt - xpred
@@ -163,8 +164,8 @@ function correct!(
             return STATUS_MAX_ITERS, max_iters, x_nxt, t_out
         end
 
-        unilateral_derivatives!(ws.dudpi, utils, ws.pi)
-        jacobian_x!(ws.Fx, ws.pi, t_out, ws.dudpi, utils)
+        unilateral_derivatives_fast2_cleaner!(ws.dudpi, utils, ws.pi)
+        jacobian_x3!(ws.Fx, ws.pi, t_out, ws.dudpi, utils)
         jacobian_t!(ws.Ft, ws.ubar, mu, utils)
 
         @inbounds for j in 1:n
@@ -176,6 +177,8 @@ function correct!(
             ws.rhs_aug[j] = -ws.res[j]
         end
         ws.rhs_aug[end] = -r_con
+
+        #println((@sprintf("%9.5f ",s) for s in ws.Fx)...)
 
         info = fast_lu!(ws.J_aug, ws.ipiv)
         if info > 0
@@ -282,6 +285,7 @@ function nash(
         while true
             xpred, tpred = predict_step!(ws.xpred, x, t, dx, dt, ds)
             corr_status, iters, x_nxt, t_nxt = correct!(ws.x_nxt, xpred, tpred, dx, dt, utils, ws)
+#print(iters, " ")
             val_status = validate_step!(corr_status, iters, x_nxt, t_nxt, xpred, tpred, ds, ws)
 
             if val_status == STATUS_SUCCESS
@@ -305,6 +309,6 @@ function nash(
         end
         iteration += 1
     end
-
+println()
     return ws.pi, (; t, iteration, regret, stall)
 end
