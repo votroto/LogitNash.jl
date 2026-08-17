@@ -153,7 +153,17 @@ end
 
 
 
+_pi,_status = nash(ntuple(_ -> randn(ntuple(_ -> 2, 2)...), 2))
 
+for D = 2:100
+    for _ = 1:10
+        Us = ntuple(_ -> rand(ntuple(_ -> D, 2)...), 2);
+        t = @timed pi,status = nash(Us)
+        println("$D $(t.time)")
+    end
+end
+
+#=
 
 A = 5
 D = 5
@@ -172,7 +182,7 @@ Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 @time pi,status = nash(Us)
 print_strats(pi)
 @show status
-
+=#
 #=
 A = 100
 D = 2

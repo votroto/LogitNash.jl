@@ -48,11 +48,14 @@ function residual_wrapper(x, t, utils::NTuple{N}) where {N}
     pi = ntuple(i -> Vector{Float64}(undef, size(utils[i], i)), Val(N))
     res = zeros(rsize)
     ubar = ntuple(i -> zeros(size(utils[i], i)), Val(N))
+    wsdudpi = ntuple(p -> ntuple(q -> zeros(size(utils[p], p), size(utils[p], q)), 3), 3)
 
     mu = LogitNash.splitviews(x, size(first(utils)) .- 1)
     LogitNash.redlograt_to_prob!.(pi, mu)
 
-    LogitNash.unilateral_deviations!(ubar, utils, pi)
+    LogitNash.unilateral_derivatives!(wsdudpi, utils, pi)
+    LogitNash.unilateral_deviations_from_derivatives!(ubar, wsdudpi, pi)
+
     LogitNash.residual!(res, mu, ubar, x, t, utils)
 end
 
@@ -84,12 +87,14 @@ function jacobian_t_analytic_vs_finitedifference()
     x = vcat(prob_to_redlograt.(_pi)...)
 
     rsize = sum(size(first(utils), i) - 1 for i in eachindex(utils))
+    wsdudpi = ntuple(p -> ntuple(q -> zeros(size(utils[p], p), size(utils[p], q)), 3), 3)
     wsubar = ntuple(i -> zeros(size(utils[i], i)), 3)
     wsFt = Vector{Float64}(undef, rsize)
 
     mu = LogitNash.splitviews(x, size(first(utils)) .- 1)
 
-    LogitNash.unilateral_deviations!(wsubar, utils, _pi)
+    LogitNash.unilateral_derivatives!(wsdudpi, utils, _pi)
+    LogitNash.unilateral_deviations_from_derivatives!(wsubar, wsdudpi, _pi)
 
     LogitNash.jacobian_t!(wsFt, wsubar, mu, utils)
 
