@@ -42,7 +42,7 @@ end
         if sample % 100 == 0
             @info "$sample, $expected_gap"
         end
-        Us = ntuple(_ -> round.(randn(2,2,2); digits=6), 3);
+        Us = ntuple(_ -> round.(randn(2,2); digits=4), 2);
         xs, status = LogitNash.nash(Us; stop_eps=expected_gap)
 
         actual_gap = equilibrium_gap(Us, xs)
@@ -56,11 +56,15 @@ end
 =#
 
 
-
-Us = ([-0.391059 0.110376; 0.189388 -1.751527;;; 0.021027 0.958216; -0.288185 0.78682], [0.40248 -1.64251; -1.469093 -1.082417;;; -0.24597 1.674616; -0.711112 -0.774135], [1.372471 0.241928; 0.285798 0.079114;;; 0.425008 -1.070167; 0.905516 -1.117824])
+Us = ([-0.9089 0.2069; -0.9056 0.1461], [1.6491 -0.6761; 0.3458 0.5571])
 LogitNash.nash(Us;stop_eps=-1.0, stop_t=1e8)
 
+
+#TightZigZagInPrecisionSmoothInStrategies = ([-0.391059 0.110376; 0.189388 -1.751527;;; 0.021027 0.958216; -0.288185 0.78682], [0.40248 -1.64251; -1.469093 -1.082417;;; -0.24597 1.674616; -0.711112 -0.774135], [1.372471 0.241928; 0.285798 0.079114;;; 0.425008 -1.070167; 0.905516 -1.117824])
+#LogitNash.nash(Us;stop_eps=-1.0, stop_t=1e8)
 #
+#
+
 #function prob_to_redlograt(y::AbstractVector)
 #    x = similar(y, length(y)-1)
 #    for i in eachindex(x)
