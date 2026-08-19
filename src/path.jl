@@ -63,7 +63,7 @@ function predict!(
 
     fill!(ws.rhs_aug, 0.0)
     ws.rhs_aug[end] = 1.0
-println(cond(ws.J_aug))
+
     fast_lu!(ws.J_aug, ws.ipiv)
 
     cur_det_sign = 1.0
@@ -240,6 +240,17 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
     return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign)
 end
 
+
+function prob_to_redlograt(y::AbstractVector)
+    x = similar(y, length(y)-1)
+    for i in eachindex(x)
+        x[i] = log(y[i] / y[end])
+    end
+    x
+end
+#equilibrium_gap(Us,)
+
+
 using Printf
 function strat_format(xs) join([@sprintf("%.6f ", w) for w in xs]) end
 """
@@ -256,6 +267,8 @@ function nash(
     validate_game(utils)
 
     x = uniform_xprofile(utils)
+    x -= rand(length(x)) * 1e-3
+
     t = 0.0
     dx = zero(x)
     dt = 1.0

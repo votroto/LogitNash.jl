@@ -55,5 +55,5 @@ $$\begin{aligned} g_\mu &= d\mu'\\ g_t &= dt \end{aligned}$$
 
 The newton corrections $\mu \gets \mu + \Delta\mu$, $t \gets t + \Delta t$ are given by
 
-$$\begin{bmatrix} F_\mu & F_t\\ g_\mu & g_t \end{bmatrix} \begin{bmatrix} \Delta \mu\\ \Delta t \end{bmatrix}= \begin{bmatrix} F\\ g \end{bmatrix}$$
+$$\begin{bmatrix} F_\mu & F_t\\ g_\mu & g_t \end{bmatrix} \begin{bmatrix} \Delta \mu\\ \Delta t \end{bmatrix}=- \begin{bmatrix} F\\ g \end{bmatrix}$$
 
