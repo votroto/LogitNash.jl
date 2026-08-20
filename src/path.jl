@@ -172,6 +172,8 @@ function predict_init!(x::Vector{Float64}, t::Float64, utils::NTuple{N}, ws) whe
     nothing
 end
 
+
+
 function correct!(
     x_nxt::Vector{Float64},
     xpred::Vector{Float64},
@@ -181,76 +183,97 @@ function correct!(
     utils::NTuple{N},
     ws;
     max_iters::Int=4,
-    abs_tol::Float64=1e-6,
-    rel_tol::Float64=1e-12
+    limit_accuracy::Float64=1e-13,
+    a::Float64=0.5
 ) where {N}
     copyto!(x_nxt, xpred)
     t_out = tpred
     n = length(x_nxt)
 
-    prev_step_norm = Inf
+    ndx_prev = Inf
+    omega = Inf
+    terminating = false
 
-    for i in 0:max_iters
+    for j in 0:max_iters
+        # --- Evaluate F(x^(j)) ---
         mu = splitviews(x_nxt, size(first(utils)) .- 1)
         redlograt_to_prob!.(ws.pi, mu)
 
         unilateral_derivatives!(ws.dudpi, utils, ws.pi)
         unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, ws.pi)
-
         residual!(ws.res, mu, ws.ubar, x_nxt, t_out, utils)
 
         @. ws.x_diff = x_nxt - xpred
         r_con = dot(ws.x_diff, dx) + (t_out - tpred) * dt
 
+        # --- Evaluate J(x^(j)) and Solve \Delta x^(j) ---
         jacobian_x!(ws.Fx, ws.pi, t_out, ws.dudpi, utils)
         jacobian_t!(ws.Ft, ws.ubar, mu, utils)
 
         scale_factor = max(1.0, t_out)
 
-        @inbounds for j in 1:n
-            ws.J_aug[end, j] = dx[j] * scale_factor
+        @inbounds for k in 1:n
+            ws.J_aug[end, k] = dx[k] * scale_factor
         end
         ws.J_aug[end, end] = dt * scale_factor
 
-        @inbounds for j in 1:n
-            ws.rhs_aug[j] = -ws.res[j]
+        @inbounds for k in 1:n
+            ws.rhs_aug[k] = -ws.res[k]
         end
         ws.rhs_aug[end] = -r_con * scale_factor
 
         info = fast_lu!(ws.J_aug, ws.ipiv)
         if info > 0
-            return STATUS_SINGULAR, i, x_nxt, t_out
+            return STATUS_SINGULAR, j, x_nxt, t_out
         end
 
         LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
 
         dt_step = ws.rhs_aug[end]
         step_norm_sq = dt_step^2
-
-        @inbounds for j in 1:n
-            ws.dx_step[j] = ws.rhs_aug[j]
-            step_norm_sq += ws.dx_step[j]^2
+        @inbounds for k in 1:n
+            ws.dx_step[k] = ws.rhs_aug[k]
+            step_norm_sq += ws.dx_step[k]^2
         end
 
-        step_norm = sqrt(step_norm_sq)
+        # --- Scale \Delta x^(j) by D^-1 ---
         val_norm = sqrt(dot(x_nxt, x_nxt) + t_out^2)
+        ndx = sqrt(step_norm_sq) / val_norm
 
-        if i >= 1 && step_norm > 0.5 * prev_step_norm
-            return STATUS_LARGE_DISTANCE, i, x_nxt, t_out
+        # If we reached the limit accuracy on the previous step, this was the polish step (Alg 2.7 Lines 13-17)
+        if terminating
+            @. x_nxt += ws.dx_step
+            t_out += dt_step
+            return STATUS_SUCCESS, j, x_nxt, t_out
         end
 
-        prev_step_norm = step_norm
-
-        if step_norm < 1e-14 * val_norm
-            return STATUS_SUCCESS, i, x_nxt, t_out
-        end
-
+        # --- Apply x^(j+1) = x^(j) - \Delta x^(j) ---
         @. x_nxt += ws.dx_step
         t_out += dt_step
 
-        if step_norm < rel_tol * val_norm && i >= 1
-            return STATUS_SUCCESS, i + 1, x_nxt, t_out
+        # --- Update Curvature Estimate \omega (Alg 2.7 Line 8) ---
+        if j == 1
+            omega = 2.0 * ndx / (ndx_prev^2)
         end
+
+        # --- Sufficient Contraction Check (Alg 2.7 Line 10-11) ---
+        if j >= 1
+            contraction = ndx / ndx_prev
+            if contraction > a^(2^(j-1))
+                return STATUS_LARGE_DISTANCE, j, x_nxt, t_out
+            end
+        end
+
+        # --- Limit Accuracy Check (Alg 2.7 Line 12) ---
+        # We omit the 1/sqrt(1-2h(a)) factor as it's a constant O(1) multiplier
+        if j >= 1 && (omega * ndx^2) / 2.0 <= limit_accuracy
+            terminating = true # Triggers the final polish eval/solve on the next loop iteration
+        elseif ndx < limit_accuracy
+            # Fallback if the step explicitly drops into the noise floor early
+            return STATUS_SUCCESS, j, x_nxt, t_out
+        end
+
+        ndx_prev = ndx
     end
 
     return STATUS_MAX_ITERS, max_iters, x_nxt, t_out
@@ -270,18 +293,13 @@ function validate_step!(
         return status
     end
 
-    dist_sq = (t_new - tpred)^2
-    @inbounds for j in 1:length(x_nxt)
-        dist_sq += (x_nxt[j] - xpred[j])^2
-    end
-
-    if dist_sq > max((2.0 * ds)^2, 1e-10)
-        return STATUS_LARGE_DISTANCE
-    end
+    # The geometric distance check is entirely removed.
+    # The step is trusted if it passed the strict Newton-Kantorovich contraction criteria.
 
     cur_det_sign = lu_det_sign(ws.J_aug, ws.ipiv)
     if ws.det_sign[1] != 0.0 && cur_det_sign != ws.det_sign[1]
-        if dist_sq > max((0.5 * ds)^2, 2.5e-11) || ds > 1e-5
+        # Only reject for determinant flips if ds is large enough to trust that it isn't precision noise
+        if ds > 1e-5
             return STATUS_JUMP
         else
             ws.det_sign[1] = cur_det_sign
@@ -334,7 +352,7 @@ function nash(
 
         dx, dt = predict_direction!(dx, dt, ws)
         regret = max_deviation_incentive(ws.ubar, ws.pi)
-      #  println(strat_format.(ws.pi)..., "$(ws.det_sign[1]) $(round(t;digits=3)) $(round(regret;digits=5)) ", strat_format(dx), " $(round(dt;digits=4))", "\t", copysign(round(prod(diag(ws.J_aug));digits=3), ws.det_sign[1]))
+        #println(strat_format.(ws.pi)..., "$(ws.det_sign[1]) $(round(t;digits=3)) $(round(regret;digits=5)) ", strat_format(dx), " $(round(dt;digits=4))", "\t", copysign(round(prod(diag(ws.J_aug));digits=3), ws.det_sign[1]))
 
         if regret <= stop_eps
             break
@@ -348,7 +366,7 @@ function nash(
             val_status = validate_step!(corr_status, iters, x_nxt, t_nxt, xpred, tpred, ds, ws)
 
 # --- BEGIN DEBUG INJECTION ---
-        if t > 1700.0 && ds < 1e-4
+        if false && t > 1700.0 && ds < 1e-4
             println("\n--- DEBUG: TRACKING STALL ---")
             println("Current t    = ", t)
             println("Current ds   = ", ds)
