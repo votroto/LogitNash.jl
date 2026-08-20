@@ -37,31 +37,54 @@ end
 
 #=
 #for expected_gap in (1.0, 1e-1, 1e-6)
-    expected_gap = 1e-6
-    for sample in 1:100000
-        if sample % 100 == 0
-            @info "$sample, $expected_gap"
-        end
-        Us = ntuple(_ -> round.(randn(2,2); digits=4), 2);
-        xs, status = LogitNash.nash(Us; stop_eps=expected_gap)
-
-        actual_gap = equilibrium_gap(Us, xs)
-        if actual_gap > expected_gap || status.stall || status.t < 0
-            @warn "gap, $actual_gap (< $expected_gap), $status"
-            println.(Us)
-            break
-        end
+expected_gap = 1e-6
+for sample in 1:100000
+    if sample % 100 == 0
+        @info "$sample, $expected_gap"
     end
+    Us = ntuple(_ -> round.(randn(2, 2, 2); digits=8), 3);
+    xs, status = LogitNash.nash(Us; stop_eps=expected_gap)
+
+    actual_gap = equilibrium_gap(Us, xs)
+    if actual_gap > expected_gap || status.stall || status.t < 0
+        @warn "gap, $actual_gap (< $expected_gap), $status"
+        println.(Us)
+        break
+    end
+end
 #end
 =#
 
+morefail = ([0.15580138 -1.3703271; -0.13171696 0.03240658;;; -0.2467819 -0.96336938; -1.65530643 0.3854053],
+[0.70705446 1.25430159; 0.33178003 -0.15091911;;; -0.39694438 0.85455809; 1.057651 -0.99578571],
+[-0.18504274 -0.48539588; -0.73814595 1.98236367;;; 0.37594749 -0.24838465; -1.14864592 1.02306522])
+@show LogitNash.nash(morefail; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
 
-Us = ([-0.9089 0.2069; -0.9056 0.1461], [1.6491 -0.6761; 0.3458 0.5571])
-LogitNash.nash(Us;stop_eps=-1.0, stop_t=1e8)
+#=
 
 
-#TightZigZagInPrecisionSmoothInStrategies = ([-0.391059 0.110376; 0.189388 -1.751527;;; 0.021027 0.958216; -0.288185 0.78682], [0.40248 -1.64251; -1.469093 -1.082417;;; -0.24597 1.674616; -0.711112 -0.774135], [1.372471 0.241928; 0.285798 0.079114;;; 0.425008 -1.070167; 0.905516 -1.117824])
+N0 = ([-0.9089 0.2069; -0.9056 0.1461], [1.6491 -0.6761; 0.3458 0.5571])
+N1 = ([-0.304721 -0.403012; -0.450979 -0.402073], [-1.468781 1.341211; 0.690623 0.03709])
+N2 = ([-0.117185 -2.258613; -0.117351 0.363109], [-0.034716 0.057856; 0.888656 -0.379315])
+N3 = ([0.70638 -0.399867; 0.719873 1.322067], [1.246126 -1.761989; -0.731066 -0.27567])
+
+TightZigZagInPrecisionSmoothInStrategies = ([-0.391059 0.110376; 0.189388 -1.751527;;; 0.021027 0.958216; -0.288185 0.78682], [0.40248 -1.64251; -1.469093 -1.082417;;; -0.24597 1.674616; -0.711112 -0.774135], [1.372471 0.241928; 0.285798 0.079114;;; 0.425008 -1.070167; 0.905516 -1.117824])
+
+
+
+
+
+@show LogitNash.nash(N0; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
+@show LogitNash.nash(N1; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
+@show LogitNash.nash(N2; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
+@show LogitNash.nash(N3; stop_eps=-1.0, stop_t=1e8, stop_iters=800)
+
+@show LogitNash.nash(TightZigZagInPrecisionSmoothInStrategies; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
+
+=#
 #LogitNash.nash(Us;stop_eps=-1.0, stop_t=1e8)
+
+
 #
 #
 

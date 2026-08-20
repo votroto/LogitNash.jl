@@ -57,3 +57,14 @@ The newton corrections $\mu \gets \mu + \Delta\mu$, $t \gets t + \Delta t$ are g
 
 $$\begin{bmatrix} F_\mu & F_t\\ g_\mu & g_t \end{bmatrix} \begin{bmatrix} \Delta \mu\\ \Delta t \end{bmatrix}=- \begin{bmatrix} F\\ g \end{bmatrix}$$
 
+## Algorithm Design
+
+1. The number of Newton corrections is kept low deliberately to prevent path jumping and keep the runtime low. This is an effective and deliberate choice inspired by HomotopyContinuation.jl and Bertini.
+2. Path jumping is prevented using a determinant check. The sign should be invariant along a smooth path segment, however we still have to be able to cross bifurcations which are inevitably present in many famous traditional games. Forcing the determinant to maintain orientation will stall progress. An angular distance check is ineffective for detecting jumps. For example, when the path follows an $\Omega$ shaped section, we can go around the first tight bend, gain speed on the smooth arc and then jump across. The determinant will flip as we are now tracking backwards, but the angular distance may be arbitrarily small as the point on the backwards path may even come directly from the predictor.
+3. The step size must remain unbounded as we need to reach a precision of $10^6$ quickly. Forcing $\Delta s \leq 1$ might solve one in a million particurarily evil logit paths, but at the cost of unnecessarily increasing the number of iterations $1000\times$ for the rest.
+4. Using a stale or approximate Jacobians for predictions is unacceptable in general. Paths occasionally contain extremely tight bends. Especially when the tight bend is in the $t$ variable very near zero, stale tangents can be disasterous.
+
+
+
+
+
