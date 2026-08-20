@@ -1,4 +1,6 @@
-include("../src/LogitNash.jl")
+include("../src/spaces.jl")
+include("../src/turocy.jl")
+include("../src/path.jl")
 
 using Random
 using LinearAlgebra
@@ -43,7 +45,7 @@ for sample in 1:100000
         @info "$sample, $expected_gap"
     end
     Us = ntuple(_ -> round.(randn(2, 2, 2); digits=8), 3);
-    xs, status = LogitNash.nash(Us; stop_eps=expected_gap)
+    xs, status = nash(Us; stop_eps=expected_gap)
 
     actual_gap = equilibrium_gap(Us, xs)
     if actual_gap > expected_gap || status.stall || status.t < 0
@@ -58,9 +60,10 @@ end
 morefail = ([0.15580138 -1.3703271; -0.13171696 0.03240658;;; -0.2467819 -0.96336938; -1.65530643 0.3854053],
 [0.70705446 1.25430159; 0.33178003 -0.15091911;;; -0.39694438 0.85455809; 1.057651 -0.99578571],
 [-0.18504274 -0.48539588; -0.73814595 1.98236367;;; 0.37594749 -0.24838465; -1.14864592 1.02306522])
-@show LogitNash.nash(morefail; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
+@show nash(morefail; stop_eps=-1.0, stop_t=1e8, stop_iters=1000)
 
 #=
+
 
 
 N0 = ([-0.9089 0.2069; -0.9056 0.1461], [1.6491 -0.6761; 0.3458 0.5571])
@@ -74,16 +77,15 @@ TightZigZagInPrecisionSmoothInStrategies = ([-0.391059 0.110376; 0.189388 -1.751
 
 
 
-@show LogitNash.nash(N0; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
-@show LogitNash.nash(N1; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
-@show LogitNash.nash(N2; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
-@show LogitNash.nash(N3; stop_eps=-1.0, stop_t=1e8, stop_iters=800)
+@show nash(N0; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
+@show nash(N1; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
+@show nash(N2; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
+@show nash(N3; stop_eps=-1.0, stop_t=1e8, stop_iters=800)
+@show nash(TightZigZagInPrecisionSmoothInStrategies; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
 
-@show LogitNash.nash(TightZigZagInPrecisionSmoothInStrategies; stop_eps=-1.0, stop_t=1e8, stop_iters=300)
 
-=#
 #LogitNash.nash(Us;stop_eps=-1.0, stop_t=1e8)
-
+=#
 
 #
 #

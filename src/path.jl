@@ -127,6 +127,24 @@ function predict_step!(xpred::Vector{Float64}, x::Vector{Float64}, t::Float64, d
     return xpred, tpred
 end
 
+function predict_step_parabolic!(
+    xpred::Vector{Float64}, x::Vector{Float64}, t::Float64,
+    dx::Vector{Float64}, dt::Float64, ds::Float64,
+    dx_last::Vector{Float64}, dt_last::Float64, ds_last::Float64, has_last::Bool
+)
+    if has_last
+        # Second order Hermite/Secant curve
+        c = 0.5 * (ds^2 / ds_last)
+        @. xpred = x + ds * dx + c * (dx - dx_last)
+        tpred = t + ds * dt + c * (dt - dt_last)
+    else
+        # Fallback to Euler for the first step
+        @. xpred = x + ds * dx
+        tpred = t + ds * dt
+    end
+    return xpred, tpred
+end
+
 
 function predict_init!(x::Vector{Float64}, t::Float64, utils::NTuple{N}, ws) where {N}
     n = length(x)
@@ -154,7 +172,6 @@ function predict_init!(x::Vector{Float64}, t::Float64, utils::NTuple{N}, ws) whe
     nothing
 end
 
-
 function correct!(
     x_nxt::Vector{Float64},
     xpred::Vector{Float64},
@@ -163,7 +180,7 @@ function correct!(
     dt::Float64,
     utils::NTuple{N},
     ws;
-    max_iters::Int=100,
+    max_iters::Int=4,
     abs_tol::Float64=1e-6,
     rel_tol::Float64=1e-12
 ) where {N}
@@ -171,38 +188,34 @@ function correct!(
     t_out = tpred
     n = length(x_nxt)
 
+    prev_step_norm = Inf
+
     for i in 0:max_iters
         mu = splitviews(x_nxt, size(first(utils)) .- 1)
         redlograt_to_prob!.(ws.pi, mu)
 
         unilateral_derivatives!(ws.dudpi, utils, ws.pi)
-
         unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, ws.pi)
+
         residual!(ws.res, mu, ws.ubar, x_nxt, t_out, utils)
 
         @. ws.x_diff = x_nxt - xpred
         r_con = dot(ws.x_diff, dx) + (t_out - tpred) * dt
 
-        if dot(ws.res, ws.res) + r_con^2 < abs_tol^2 && i >= 1
-            return STATUS_SUCCESS, i, x_nxt, t_out
-        end
-
-        if i == max_iters
-            return STATUS_MAX_ITERS, max_iters, x_nxt, t_out
-        end
-
         jacobian_x!(ws.Fx, ws.pi, t_out, ws.dudpi, utils)
         jacobian_t!(ws.Ft, ws.ubar, mu, utils)
 
+        scale_factor = max(1.0, t_out)
+
         @inbounds for j in 1:n
-            ws.J_aug[end, j] = dx[j]
+            ws.J_aug[end, j] = dx[j] * scale_factor
         end
-        ws.J_aug[end, end] = dt
+        ws.J_aug[end, end] = dt * scale_factor
 
         @inbounds for j in 1:n
             ws.rhs_aug[j] = -ws.res[j]
         end
-        ws.rhs_aug[end] = -r_con
+        ws.rhs_aug[end] = -r_con * scale_factor
 
         info = fast_lu!(ws.J_aug, ws.ipiv)
         if info > 0
@@ -221,13 +234,21 @@ function correct!(
 
         step_norm = sqrt(step_norm_sq)
         val_norm = sqrt(dot(x_nxt, x_nxt) + t_out^2)
-#if step_norm < 1e-14 * val_norm
-#            return STATUS_SUCCESS, i, x_nxt, t_out
-#        end
+
+        if i >= 1 && step_norm > 0.5 * prev_step_norm
+            return STATUS_LARGE_DISTANCE, i, x_nxt, t_out
+        end
+
+        prev_step_norm = step_norm
+
+        if step_norm < 1e-14 * val_norm
+            return STATUS_SUCCESS, i, x_nxt, t_out
+        end
+
         @. x_nxt += ws.dx_step
         t_out += dt_step
 
-        if step_norm < rel_tol * val_norm  && i >= 1
+        if step_norm < rel_tol * val_norm && i >= 1
             return STATUS_SUCCESS, i + 1, x_nxt, t_out
         end
     end
@@ -254,13 +275,13 @@ function validate_step!(
         dist_sq += (x_nxt[j] - xpred[j])^2
     end
 
-    if dist_sq > (2.0 * ds)^2
+    if dist_sq > max((2.0 * ds)^2, 1e-10)
         return STATUS_LARGE_DISTANCE
     end
 
     cur_det_sign = lu_det_sign(ws.J_aug, ws.ipiv)
     if ws.det_sign[1] != 0.0 && cur_det_sign != ws.det_sign[1]
-        if dist_sq > (0.5 * ds)^2 || ds > 1e-5
+        if dist_sq > max((0.5 * ds)^2, 2.5e-11) || ds > 1e-5
             return STATUS_JUMP
         else
             ws.det_sign[1] = cur_det_sign
@@ -272,8 +293,8 @@ end
 
 
 
-using Printf
-function strat_format(xs) join([@sprintf("%.6f ", w) for w in xs]) end
+#using Printf
+#function strat_format(xs) join([@sprintf("%.6f ", w) for w in xs]) end
 
 
 """
@@ -295,6 +316,11 @@ function nash(
     dt = 1.0
     ds = 0.012
 
+    dx_last=copy(dx)
+    dt_last = dt
+    ds_last=ds
+    has_last=false
+
     ws = make_hc_workspace(x, size(first(utils)))
     predict_init!(x, t, utils, ws)
 
@@ -308,22 +334,63 @@ function nash(
 
         dx, dt = predict_direction!(dx, dt, ws)
         regret = max_deviation_incentive(ws.ubar, ws.pi)
-        println(strat_format.(ws.pi)..., "$(ws.det_sign[1]) $(round(t;digits=3)) $(round(regret;digits=5)) ", strat_format(dx), " $(round(dt;digits=4))", "\t", copysign(round(prod(diag(ws.J_aug));digits=3), ws.det_sign[1]))
+      #  println(strat_format.(ws.pi)..., "$(ws.det_sign[1]) $(round(t;digits=3)) $(round(regret;digits=5)) ", strat_format(dx), " $(round(dt;digits=4))", "\t", copysign(round(prod(diag(ws.J_aug));digits=3), ws.det_sign[1]))
 
         if regret <= stop_eps
             break
         end
 
         while true
-            xpred, tpred = predict_step!(ws.xpred, x, t, dx, dt, ds)
+            #xpred, tpred = predict_step!(ws.xpred, x, t, dx, dt, ds)
+            xpred, tpred = predict_step_parabolic!(ws.xpred, x, t, dx, dt, ds, dx_last, dt_last, ds_last, has_last)
 
             corr_status, iters, x_nxt, t_nxt = correct!(ws.x_nxt, xpred, tpred, dx, dt, utils, ws)
             val_status = validate_step!(corr_status, iters, x_nxt, t_nxt, xpred, tpred, ds, ws)
 
+# --- BEGIN DEBUG INJECTION ---
+        if t > 1700.0 && ds < 1e-4
+            println("\n--- DEBUG: TRACKING STALL ---")
+            println("Current t    = ", t)
+            println("Current ds   = ", ds)
+            println("Tangent dt   = ", dt)
+            println("Norm(dx)     = ", norm(dx))
+            println("Corr status  = ", corr_status, " (iters: ", iters, ")")
+            println("Val status   = ", val_status)
+
+            # Reconstruct the augmented Jacobian BEFORE LU destroys it to check conditioning
+            mu_pred = splitviews(xpred, size(first(utils)) .- 1)
+            # Assuming you have a temporary pi workspace or can just overwrite ws.pi safely here since step failed
+            redlograt_to_prob!.(ws.pi, mu_pred)
+            unilateral_derivatives!(ws.dudpi, utils, ws.pi)
+            unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, ws.pi)
+
+            residual!(ws.res, mu_pred, ws.ubar, xpred, tpred, utils)
+            println("Pred Res Norm = ", norm(ws.res))
+
+            jacobian_x!(ws.Fx, ws.pi, tpred, ws.dudpi, utils)
+            jacobian_t!(ws.Ft, ws.ubar, mu_pred, utils)
+
+            # Rebuild the exact matrix passed to LAPACK in correct!
+            J_test = copy(ws.J_aug)
+            scale_fac = max(1.0, tpred)
+            for j in 1:length(x)
+                J_test[end, j] = dx[j] * scale_fac
+            end
+            J_test[end, end] = dt * scale_fac
+
+            println("Cond(J_aug)   = ", cond(J_test))
+            println("-----------------------------")
+        end
+        # --- END DEBUG INJECTION ---
 
             if val_status == STATUS_SUCCESS
                 copyto!(x, x_nxt)
                 t = t_nxt
+
+                copyto!(dx_last, dx)
+                dt_last = dt
+                ds_last = ds
+                has_last = true
                 break
             else
                 if ds <= 1e-6
@@ -331,7 +398,7 @@ function nash(
                 end
                 ds /= 2.0
                 successes_in_row = 0
-                if ds <= 1e-12
+                if ds <= 1e-8
                     stall = true
                     break
                 end
