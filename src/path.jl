@@ -59,7 +59,12 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
 
     det_sign = Float64[0.0]
 
-    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign)
+    # --- ADDED FOR MIDPOINT & ANGLE CHECKS ---
+    dx_new = Vector{T}(undef, n)
+    x_mid = Vector{T}(undef, n)
+    x_nxt_half = Vector{T}(undef, n)
+
+    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign, dx_new, x_mid, x_nxt_half)
 end
 
 function lu_det_sign(A::Matrix{Float64}, ipiv::Vector{BlasInt})
@@ -279,6 +284,7 @@ function correct!(
     return STATUS_MAX_ITERS, max_iters, x_nxt, t_out
 end
 
+
 function validate_step!(
     status::StepStatus,
     iters::Int,
@@ -287,20 +293,76 @@ function validate_step!(
     xpred::Vector{Float64},
     tpred::Float64,
     ds::Float64,
+    x::Vector{Float64},      # Added: previous x
+    t::Float64,              # Added: previous t
+    dx::Vector{Float64},     # Added: previous dx
+    dt::Float64,             # Added: previous dt
+    utils::NTuple{N},        # Added: utils
     ws
-)
+) where {N}
     if status != STATUS_SUCCESS
         return status
     end
 
-    # The geometric distance check is entirely removed.
-    # The step is trusted if it passed the strict Newton-Kantorovich contraction criteria.
+    n = length(x)
+
+    # 1. Reconstruct the augmented Jacobian to extract the NEW tangent
+    @inbounds for j in 1:n
+        ws.J_aug[end, j] = dx[j]
+    end
+    ws.J_aug[end, end] = dt
+
+    info = fast_lu!(ws.J_aug, ws.ipiv)
+    if info > 0
+        return STATUS_SINGULAR
+    end
 
     cur_det_sign = lu_det_sign(ws.J_aug, ws.ipiv)
+
+    fill!(ws.rhs_aug, 0.0)
+    ws.rhs_aug[end] = 1.0
+    LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
+
+    norm_factor = 1.0 / sqrt(dot(ws.rhs_aug, ws.rhs_aug))
+    @inbounds for j in 1:n
+        ws.dx_new[j] = ws.rhs_aug[j] * norm_factor
+    end
+    dt_new = ws.rhs_aug[end] * norm_factor
+
+    # 2. Angular Distance Check (prevents 90-degree orthogonal deviations)
+    # Allows up to a 60-degree bend. Orthogonal jumps will have dot_product ~ 0.
+    dot_product = dot(dx, ws.dx_new) + dt * dt_new
+    if dot_product < 0.5
+        return STATUS_JUMP
+    end
+
+    # 3. Determinant Sign Check with Midpoint Path Confirmation
     if ws.det_sign[1] != 0.0 && cur_det_sign != ws.det_sign[1]
-        # Only reject for determinant flips if ds is large enough to trust that it isn't precision noise
         if ds > 1e-5
-            return STATUS_JUMP
+            # We suspect a bifurcation. Guess its location near the midpoint.
+            @. ws.x_mid = 0.5 * (x + x_nxt)
+            t_mid = 0.5 * (t + t_new)
+
+            # Use the secant as the local tangent for the corrector plane
+            sec_dt = t_new - t
+            sec_norm = sqrt(sum(abs2, x_nxt .- x) + sec_dt^2)
+            @. ws.dx_new = (x_nxt - x) / sec_norm
+            sec_dt /= sec_norm
+
+            # Confirm whether a path exists there using a relaxed corrector limit
+            status_half, _, _, _ = correct!(
+                ws.x_nxt_half, ws.x_mid, t_mid, ws.dx_new, sec_dt, utils, ws;
+                max_iters=4, limit_accuracy=1e-5, a=0.5
+            )
+
+            # If the midpoint converges, OR if it hits the exact singularity,
+            # the bifurcation path is physically confirmed! Vault it at full speed.
+            if status_half == STATUS_SUCCESS || status_half == STATUS_SINGULAR
+                ws.det_sign[1] = cur_det_sign
+            else
+                # Midpoint is floating in empty space. We jumped an Omega gap.
+                return STATUS_JUMP
+            end
         else
             ws.det_sign[1] = cur_det_sign
         end
@@ -308,7 +370,6 @@ function validate_step!(
 
     return STATUS_SUCCESS
 end
-
 
 
 #using Printf
@@ -359,47 +420,12 @@ function nash(
         end
 
         while true
-            #xpred, tpred = predict_step!(ws.xpred, x, t, dx, dt, ds)
             xpred, tpred = predict_step_parabolic!(ws.xpred, x, t, dx, dt, ds, dx_last, dt_last, ds_last, has_last)
 
             corr_status, iters, x_nxt, t_nxt = correct!(ws.x_nxt, xpred, tpred, dx, dt, utils, ws)
-            val_status = validate_step!(corr_status, iters, x_nxt, t_nxt, xpred, tpred, ds, ws)
 
-# --- BEGIN DEBUG INJECTION ---
-        if false && t > 1700.0 && ds < 1e-4
-            println("\n--- DEBUG: TRACKING STALL ---")
-            println("Current t    = ", t)
-            println("Current ds   = ", ds)
-            println("Tangent dt   = ", dt)
-            println("Norm(dx)     = ", norm(dx))
-            println("Corr status  = ", corr_status, " (iters: ", iters, ")")
-            println("Val status   = ", val_status)
-
-            # Reconstruct the augmented Jacobian BEFORE LU destroys it to check conditioning
-            mu_pred = splitviews(xpred, size(first(utils)) .- 1)
-            # Assuming you have a temporary pi workspace or can just overwrite ws.pi safely here since step failed
-            redlograt_to_prob!.(ws.pi, mu_pred)
-            unilateral_derivatives!(ws.dudpi, utils, ws.pi)
-            unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, ws.pi)
-
-            residual!(ws.res, mu_pred, ws.ubar, xpred, tpred, utils)
-            println("Pred Res Norm = ", norm(ws.res))
-
-            jacobian_x!(ws.Fx, ws.pi, tpred, ws.dudpi, utils)
-            jacobian_t!(ws.Ft, ws.ubar, mu_pred, utils)
-
-            # Rebuild the exact matrix passed to LAPACK in correct!
-            J_test = copy(ws.J_aug)
-            scale_fac = max(1.0, tpred)
-            for j in 1:length(x)
-                J_test[end, j] = dx[j] * scale_fac
-            end
-            J_test[end, end] = dt * scale_fac
-
-            println("Cond(J_aug)   = ", cond(J_test))
-            println("-----------------------------")
-        end
-        # --- END DEBUG INJECTION ---
+            # --- MODIFIED: Pass x, t, dx, dt, and utils down to the validator ---
+            val_status = validate_step!(corr_status, iters, x_nxt, t_nxt, xpred, tpred, ds, x, t, dx, dt, utils, ws)
 
             if val_status == STATUS_SUCCESS
                 copyto!(x, x_nxt)
