@@ -165,8 +165,8 @@ end
 
 
 
-A = 5
-D = 5
+A = 50
+D = 3
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
 pi,status = nash(Us)#;stop_eps=NaN)

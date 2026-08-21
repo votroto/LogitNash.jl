@@ -5,21 +5,21 @@ include("../src/path.jl")
 using Random
 using LinearAlgebra
 
-function unilateral_deviations_simple(
+function _unilateral_deviations_simple(
     payoffs::NTuple{N,Array{Float64,N}},
     xs::NTuple{N,Vector{Float64}}
 ) where N
     result = ntuple(i -> zeros(size(payoffs[i], i)), N)
     for i in CartesianIndices(first(payoffs))
         for p in 1:N
-            w = prod(xs[q][i[q]] for q in 1:N if q != p)
+            w = prod(xs[q][i[q]] for q in 1:N if q != p; init=1.0)
             result[p][i[p]] += w * payoffs[p][i]
         end
     end
     result
 end
 
-function max_deviation_incentive(
+function _max_deviation_incentive(
     deviations::NTuple{N,Vector{Float64}},
     xs::NTuple{N,Vector{Float64}}
 ) where N
@@ -33,19 +33,31 @@ function equilibrium_gap(
     payoffs::NTuple{N,Array{Float64,N}},
     xs::NTuple{N,Vector{Float64}}
 ) where N
-    deviations = unilateral_deviations_simple(payoffs, xs)
-    max_deviation_incentive(deviations, xs)
+    deviations = _unilateral_deviations_simple(payoffs, xs)
+    _max_deviation_incentive(deviations, xs)
 end
 
+
+A = 20
+D = 3
+#Uys = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
+
+
+AAs = ([-1.368882 0.578116 1.303567; 0.692029 0.774948 -0.86032; -0.383599 0.61791 -0.9516;;; -0.332848 1.620672 -0.626773; 0.523243 -2.060479 -1.124929; 0.844797 -0.438524 -1.964282;;; -0.619482 -0.195577 -0.278415; -0.453032 0.688599 -1.598258; -1.074967 -0.194132 1.317403], [-1.779638 -0.41343 2.823656; 0.869808 0.406468 -0.875078; -1.48732 1.720336 -0.981216;;; -1.620036 0.311046 0.359621; 0.306674 -1.280073 -0.089763; 0.391714 0.0424 0.072466;;; -0.479659 -0.093354 -2.679282; -1.032664 0.353716 0.513576; -0.074874 -1.046797 0.028697], [-0.048223 0.7541 -0.023225; -2.111822 -0.374847 0.220936; -1.056312 -1.443979 -0.338691;;; 0.565508 -1.738251 -0.165248; 0.018934 0.762444 0.458539; -0.120951 -0.637225 0.878962;;; 0.244257 0.406429 -0.224197; 0.646677 -0.451477 1.155951; -1.022246 1.399984 0.271239])
+
+@show pi,status = nash(AAs; stop_eps=1e-6)
+r = equilibrium_gap(AAs, pi)
+status.regret - r
+
+
 #=
-#for expected_gap in (1.0, 1e-1, 1e-6)
-expected_gap = 1e-6
+for expected_gap in (1.0, 1e-6)
 for sample in 1:100000
     if sample % 100 == 0
         @info "$sample, $expected_gap"
     end
-    Us = ntuple(_ -> round.(randn(2, 2, 2); digits=8), 3);
-    xs, status = nash(Us; stop_eps=expected_gap)
+    Us = ntuple(_ -> round.(randn(3, 3, 3); digits=6), 3);
+    xs, status = nash(Us; stop_eps=expected_gap, stop_t=1e11)
 
     actual_gap = equilibrium_gap(Us, xs)
     if actual_gap > expected_gap || status.stall || status.t < 0
@@ -54,15 +66,15 @@ for sample in 1:100000
         break
     end
 end
-#end
-=#
+end
 
+=#
 
 #@show nash(g222b; stop_eps=-1.0, stop_t=1e8, stop_iters=1000)
 
 
 
-
+#=
 
 g22a = ([-0.9089 0.2069; -0.9056 0.1461], [1.6491 -0.6761; 0.3458 0.5571])
 g22b = ([-0.304721 -0.403012; -0.450979 -0.402073], [-1.468781 1.341211; 0.690623 0.03709])
@@ -76,13 +88,14 @@ g222b = ([0.15580138 -1.3703271; -0.13171696 0.03240658;;; -0.2467819 -0.9633693
 
 
 
-#@show nash(g22a; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
-#@show nash(g22b; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
-#@show nash(g22c; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
-#@show nash(g22d; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
-#@show nash(g222a; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
+@show nash(g22a; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
+@show nash(g22b; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
+@show nash(g22c; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
+@show nash(g22d; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
+@show nash(g222a; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
 @show nash(g222b; stop_eps=-1.0, stop_t=1e8, stop_iters=500)
 
+=#
 
 #LogitNash.nash(Us;stop_eps=-1.0, stop_t=1e8)
 
