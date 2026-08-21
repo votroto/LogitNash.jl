@@ -59,12 +59,7 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
 
     det_sign = Float64[0.0]
 
-    # --- ADDED FOR MIDPOINT & ANGLE CHECKS ---
-    dx_new = Vector{T}(undef, n)
-    x_mid = Vector{T}(undef, n)
-    x_nxt_half = Vector{T}(undef, n)
-
-    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign, dx_new, x_mid, x_nxt_half)
+    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign)
 end
 
 function lu_det_sign(A::Matrix{Float64}, ipiv::Vector{BlasInt})
@@ -132,24 +127,6 @@ function predict_step!(xpred::Vector{Float64}, x::Vector{Float64}, t::Float64, d
     return xpred, tpred
 end
 
-function predict_step_parabolic!(
-    xpred::Vector{Float64}, x::Vector{Float64}, t::Float64,
-    dx::Vector{Float64}, dt::Float64, ds::Float64,
-    dx_last::Vector{Float64}, dt_last::Float64, ds_last::Float64, has_last::Bool
-)
-    if has_last
-        # Second order Hermite/Secant curve
-        c = 0.5 * (ds^2 / ds_last)
-        @. xpred = x + ds * dx + c * (dx - dx_last)
-        tpred = t + ds * dt + c * (dt - dt_last)
-    else
-        # Fallback to Euler for the first step
-        @. xpred = x + ds * dx
-        tpred = t + ds * dt
-    end
-    return xpred, tpred
-end
-
 
 function predict_init!(x::Vector{Float64}, t::Float64, utils::NTuple{N}, ws) where {N}
     n = length(x)
@@ -178,7 +155,6 @@ function predict_init!(x::Vector{Float64}, t::Float64, utils::NTuple{N}, ws) whe
 end
 
 
-
 function correct!(
     x_nxt::Vector{Float64},
     xpred::Vector{Float64},
@@ -187,103 +163,78 @@ function correct!(
     dt::Float64,
     utils::NTuple{N},
     ws;
-    max_iters::Int=4,
-    limit_accuracy::Float64=1e-13,
-    a::Float64=0.5
+    max_iters::Int=5,
+    abs_tol::Float64=1e-9,
+    rel_tol::Float64=1e-12
 ) where {N}
     copyto!(x_nxt, xpred)
     t_out = tpred
     n = length(x_nxt)
 
-    ndx_prev = Inf
-    omega = Inf
-    terminating = false
-
-    for j in 0:max_iters
-        # --- Evaluate F(x^(j)) ---
+    for i in 0:max_iters
         mu = splitviews(x_nxt, size(first(utils)) .- 1)
         redlograt_to_prob!.(ws.pi, mu)
 
         unilateral_derivatives!(ws.dudpi, utils, ws.pi)
+
         unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, ws.pi)
         residual!(ws.res, mu, ws.ubar, x_nxt, t_out, utils)
 
         @. ws.x_diff = x_nxt - xpred
         r_con = dot(ws.x_diff, dx) + (t_out - tpred) * dt
 
-        # --- Evaluate J(x^(j)) and Solve \Delta x^(j) ---
+        if dot(ws.res, ws.res) + r_con^2 < abs_tol^2 && i >= 1
+            return STATUS_SUCCESS, i, x_nxt, t_out
+        end
+
+        if i == max_iters
+            return STATUS_MAX_ITERS, max_iters, x_nxt, t_out
+        end
+
         jacobian_x!(ws.Fx, ws.pi, t_out, ws.dudpi, utils)
         jacobian_t!(ws.Ft, ws.ubar, mu, utils)
 
-        scale_factor = max(1.0, t_out)
-
-        @inbounds for k in 1:n
-            ws.J_aug[end, k] = dx[k] * scale_factor
+        @inbounds for j in 1:n
+            ws.J_aug[end, j] = dx[j]
         end
-        ws.J_aug[end, end] = dt * scale_factor
+        ws.J_aug[end, end] = dt
 
-        @inbounds for k in 1:n
-            ws.rhs_aug[k] = -ws.res[k]
+        display(ws.J_aug)
+        println()
+
+        @inbounds for j in 1:n
+            ws.rhs_aug[j] = -ws.res[j]
         end
-        ws.rhs_aug[end] = -r_con * scale_factor
+        ws.rhs_aug[end] = -r_con
 
         info = fast_lu!(ws.J_aug, ws.ipiv)
         if info > 0
-            return STATUS_SINGULAR, j, x_nxt, t_out
+            return STATUS_SINGULAR, i, x_nxt, t_out
         end
 
         LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
 
         dt_step = ws.rhs_aug[end]
         step_norm_sq = dt_step^2
-        @inbounds for k in 1:n
-            ws.dx_step[k] = ws.rhs_aug[k]
-            step_norm_sq += ws.dx_step[k]^2
+
+        @inbounds for j in 1:n
+            ws.dx_step[j] = ws.rhs_aug[j]
+            step_norm_sq += ws.dx_step[j]^2
         end
 
-        # --- Scale \Delta x^(j) by D^-1 ---
+        step_norm = sqrt(step_norm_sq)
         val_norm = sqrt(dot(x_nxt, x_nxt) + t_out^2)
-        ndx = sqrt(step_norm_sq) / val_norm
 
-        # If we reached the limit accuracy on the previous step, this was the polish step (Alg 2.7 Lines 13-17)
-        if terminating
-            @. x_nxt += ws.dx_step
-            t_out += dt_step
-            return STATUS_SUCCESS, j, x_nxt, t_out
-        end
-
-        # --- Apply x^(j+1) = x^(j) - \Delta x^(j) ---
         @. x_nxt += ws.dx_step
         t_out += dt_step
 
-        # --- Update Curvature Estimate \omega (Alg 2.7 Line 8) ---
-        if j == 1
-            omega = 2.0 * ndx / (ndx_prev^2)
+        if step_norm < rel_tol * val_norm  && i >= 1
+            return STATUS_SUCCESS, i + 1, x_nxt, t_out
         end
-
-        # --- Sufficient Contraction Check (Alg 2.7 Line 10-11) ---
-        if j >= 1
-            contraction = ndx / ndx_prev
-            if contraction > a^(2^(j-1))
-                return STATUS_LARGE_DISTANCE, j, x_nxt, t_out
-            end
-        end
-
-        # --- Limit Accuracy Check (Alg 2.7 Line 12) ---
-        # We omit the 1/sqrt(1-2h(a)) factor as it's a constant O(1) multiplier
-        if j >= 1 && (omega * ndx^2) / 2.0 <= limit_accuracy
-            terminating = true # Triggers the final polish eval/solve on the next loop iteration
-        elseif ndx < limit_accuracy
-            # Fallback if the step explicitly drops into the noise floor early
-            return STATUS_SUCCESS, j, x_nxt, t_out
-        end
-
-        ndx_prev = ndx
     end
 
     return STATUS_MAX_ITERS, max_iters, x_nxt, t_out
 end
-
 
 function validate_step!(
     status::StepStatus,
@@ -293,76 +244,25 @@ function validate_step!(
     xpred::Vector{Float64},
     tpred::Float64,
     ds::Float64,
-    x::Vector{Float64},      # Added: previous x
-    t::Float64,              # Added: previous t
-    dx::Vector{Float64},     # Added: previous dx
-    dt::Float64,             # Added: previous dt
-    utils::NTuple{N},        # Added: utils
     ws
-) where {N}
+)
     if status != STATUS_SUCCESS
         return status
     end
 
-    n = length(x)
-
-    # 1. Reconstruct the augmented Jacobian to extract the NEW tangent
-    @inbounds for j in 1:n
-        ws.J_aug[end, j] = dx[j]
+    dist_sq = (t_new - tpred)^2
+    @inbounds for j in 1:length(x_nxt)
+        dist_sq += (x_nxt[j] - xpred[j])^2
     end
-    ws.J_aug[end, end] = dt
 
-    info = fast_lu!(ws.J_aug, ws.ipiv)
-    if info > 0
-        return STATUS_SINGULAR
+    if dist_sq > (2.0 * ds)^2
+        return STATUS_LARGE_DISTANCE
     end
 
     cur_det_sign = lu_det_sign(ws.J_aug, ws.ipiv)
-
-    fill!(ws.rhs_aug, 0.0)
-    ws.rhs_aug[end] = 1.0
-    LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
-
-    norm_factor = 1.0 / sqrt(dot(ws.rhs_aug, ws.rhs_aug))
-    @inbounds for j in 1:n
-        ws.dx_new[j] = ws.rhs_aug[j] * norm_factor
-    end
-    dt_new = ws.rhs_aug[end] * norm_factor
-
-    # 2. Angular Distance Check (prevents 90-degree orthogonal deviations)
-    # Allows up to a 60-degree bend. Orthogonal jumps will have dot_product ~ 0.
-    dot_product = dot(dx, ws.dx_new) + dt * dt_new
-    if dot_product < 0.5
-        return STATUS_JUMP
-    end
-
-    # 3. Determinant Sign Check with Midpoint Path Confirmation
     if ws.det_sign[1] != 0.0 && cur_det_sign != ws.det_sign[1]
-        if ds > 1e-5
-            # We suspect a bifurcation. Guess its location near the midpoint.
-            @. ws.x_mid = 0.5 * (x + x_nxt)
-            t_mid = 0.5 * (t + t_new)
-
-            # Use the secant as the local tangent for the corrector plane
-            sec_dt = t_new - t
-            sec_norm = sqrt(sum(abs2, x_nxt .- x) + sec_dt^2)
-            @. ws.dx_new = (x_nxt - x) / sec_norm
-            sec_dt /= sec_norm
-
-            # Confirm whether a path exists there using a relaxed corrector limit
-            status_half, _, _, _ = correct!(
-                ws.x_nxt_half, ws.x_mid, t_mid, ws.dx_new, sec_dt, utils, ws;
-                max_iters=4, limit_accuracy=1e-5, a=0.5
-            )
-
-            # If the midpoint converges, OR if it hits the exact singularity,
-            # the bifurcation path is physically confirmed! Vault it at full speed.
-            if status_half == STATUS_SUCCESS || status_half == STATUS_SINGULAR
-                ws.det_sign[1] = cur_det_sign
-            else
-                # Midpoint is floating in empty space. We jumped an Omega gap.
-                return STATUS_JUMP
-            end
+        if dist_sq > (0.5 * ds)^2 || ds > 1e-5
+            return STATUS_JUMP
         else
             ws.det_sign[1] = cur_det_sign
         end
@@ -370,6 +270,7 @@ function validate_step!(
 
     return STATUS_SUCCESS
 end
+
 
 
 #using Printf
@@ -389,16 +290,10 @@ function nash(
     validate_game(utils)
 
     x = uniform_xprofile(utils)
-    x .+= rand(length(x))*1e-3
     t = 0.0
     dx = zero(x)
     dt = 1.0
     ds = 0.012
-
-    dx_last=copy(dx)
-    dt_last = dt
-    ds_last=ds
-    has_last=false
 
     ws = make_hc_workspace(x, size(first(utils)))
     predict_init!(x, t, utils, ws)
@@ -413,28 +308,22 @@ function nash(
 
         dx, dt = predict_direction!(dx, dt, ws)
         regret = max_deviation_incentive(ws.ubar, ws.pi)
-        #println(strat_format.(ws.pi)..., "$(ws.det_sign[1]) $(round(t;digits=3)) $(round(regret;digits=5)) ", strat_format(dx), " $(round(dt;digits=4))", "\t", copysign(round(prod(diag(ws.J_aug));digits=3), ws.det_sign[1]))
+      # println(strat_format.(ws.pi)..., "$(ws.det_sign[1]) $(round(t;digits=3)) $(round(ds;digits=5))")
 
         if regret <= stop_eps
             break
         end
 
         while true
-            xpred, tpred = predict_step_parabolic!(ws.xpred, x, t, dx, dt, ds, dx_last, dt_last, ds_last, has_last)
+            xpred, tpred = predict_step!(ws.xpred, x, t, dx, dt, ds)
 
             corr_status, iters, x_nxt, t_nxt = correct!(ws.x_nxt, xpred, tpred, dx, dt, utils, ws)
+            val_status = validate_step!(corr_status, iters, x_nxt, t_nxt, xpred, tpred, ds, ws)
 
-            # --- MODIFIED: Pass x, t, dx, dt, and utils down to the validator ---
-            val_status = validate_step!(corr_status, iters, x_nxt, t_nxt, xpred, tpred, ds, x, t, dx, dt, utils, ws)
 
             if val_status == STATUS_SUCCESS
                 copyto!(x, x_nxt)
                 t = t_nxt
-
-                copyto!(dx_last, dx)
-                dt_last = dt
-                ds_last = ds
-                has_last = true
                 break
             else
                 if ds <= 1e-6
@@ -442,7 +331,7 @@ function nash(
                 end
                 ds /= 2.0
                 successes_in_row = 0
-                if ds <= 1e-8
+                if ds <= 1e-12
                     stall = true
                     break
                 end
