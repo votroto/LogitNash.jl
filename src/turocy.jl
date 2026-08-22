@@ -136,12 +136,12 @@ end
 
 
 
-
-function jacobian_t!(J, ubar, mu, u)
+# Scaled the parameter column from Ft to Fλ for the log . + 1
+function jacobian_t!(J, ubar, mu, u, fac)
     idx = 1
     @inbounds for p in eachindex(u)
         for a in eachindex(mu[p])
-            J[idx] = ubar[p][end] - ubar[p][a]
+            J[idx] = fac * (ubar[p][end] - ubar[p][a])
             idx += 1
         end
     end
