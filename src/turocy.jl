@@ -141,7 +141,7 @@ function jacobian_t!(J, ubar, mu, u, fac)
     idx = 1
     @inbounds for p in eachindex(u)
         for a in eachindex(mu[p])
-            J[idx] = fac * (ubar[p][end] - ubar[p][a])
+            J[idx] = (1.0 + fac) * (ubar[p][end] - ubar[p][a])
             idx += 1
         end
     end

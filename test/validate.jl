@@ -38,20 +38,20 @@ function equilibrium_gap(
 end
 
 begin
-    if false
-        expected_gap = 1e-5
+    if true
+        expected_gap = 1e-6
         #for expected_gap in (1.0, 1e-6)
         for sample in 1:1000
             if sample % 100 == 0
-           #     @info "$sample, $expected_gap"
+                @info "$sample, $expected_gap"
             end
-            A = 3
-            D = 2
-            Us = (round.(randn(3,2 ); digits=6), round.(randn(3,2 ); digits=6))
+            A = 5
+            D = 6
+            #Us = (round.(randn(3,2 ); digits=6), round.(randn(3,2 ); digits=6))
             #Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
-            #Us = ntuple(D) do i
-            #    round.(randn(ntuple(_ -> A, D)...); digits=6)
-            #end
+            Us = ntuple(D) do i
+                round.(randn(ntuple(_ -> A, D)...); digits=6)
+            end
             xs, status = nash(Us; stop_eps=expected_gap, stop_t=1e9)
 
             actual_gap = equilibrium_gap(Us, xs)
@@ -225,6 +225,9 @@ set_rn222 = [rn222a, rn222b, rn222c, rn222d, rn222e, rn222f, rn222g, rn222h, rn2
 set_rn2222 = [rn2222a, rn2222b, rn2222c, rn2222d, rn2222e]
 set_tst = [tst_ds_slow_222a, tst_ds_slow_222b, tst_ds_slow_222c, tst_corr_loose_222a, tst_corr_loose_222b, tst_corr_jumpy_222a, tst_corr_jumpy_222b, tst_corr_jumpy_222c, tst_corr_jumpy_222d, tst_corr_jumpy_222e, tst_corr_lazy_222a, tst_corr_lazy_222b, tst_pred_stale_jac_222b, tst_sign_switch_222b, tst_sign_switch_222g, tst_sign_switch_222j, tst_sign_switch_222l, tst_sign_switch_222m, tst_sign_switch_222n, tst_corr_too_far_222a, tst_corr_too_far_222b, tst_corr_too_far_222c, tst_corr_turn_222a, tst_corr_turn_222c, tst_corr_f64noise_33a, tst_corr_f64noise_33b, tst_corr_f64noise_33c, tst_corr_f64noise_33d, tst_corr_f64noise_33e, tst_corr_f64noise_33f, tst_corr_f64noise_33g, tst_corr_f64noise_33h, tst_corr_f64noise_33i, tst_corr_f64noise_33j, tst_corr_f64noise_33k, tst_corr_f64noise_32a, tst_corr_f64noise_32b, tst_corr_f64noise_32c, tst_corr_f64noise_32d, tst_corr_f64noise_32e, tst_corr_f64noise_32f, tst_corr_f64noise_32g, tst_corr_f64noise_32h, tst_corr_f64noise_32i, tst_corr_f64noise_32j, tst_corr_f64noise_32k, tst_corr_f64noise_32l]
 
+
+
+
 nothing
 
 
@@ -245,17 +248,19 @@ nothing
 # nash(tst_sign_switch_222b; stop_t=1e6, stop_iters=300, stop_eps=1e-7)
 
 
-if true
+#nash(rn2222a)
+
+if false
     for set in (set_rn22, set_rn33, set_rn44, set_rn222, set_rn2222, set_tst)
         println()
         for game in set
             expected_gap = 1e-6
 
-            xs, status = nash(game; stop_eps=expected_gap, stop_t=1e6)
+            xs, status = nash(game; stop_eps=expected_gap, stop_t=1e6, stop_iters=10000)
             actual_gap = equilibrium_gap(game, xs)
 
             if actual_gap > expected_gap || status.stall || status.t < 0
-                #@warn "gap, $actual_gap (< $expected_gap), $status"
+              #  @warn "gap, $actual_gap (< $expected_gap), $status"
                 print("X")
             else
                 print(".")

@@ -35,17 +35,6 @@ function max_deviation_incentive(ubar::NTuple{N}, pi::NTuple{N}) where N
     maximum(maximum(ubar[p]) - dot(ubar[p], pi[p]) for p in 1:N)
 end
 
-
-function _amax_deviation_incentive(
-    deviations::NTuple{N,Vector{Float64}},
-    xs::NTuple{N,Vector{Float64}}
-) where N
-    actuals = dot.(deviations, xs)
-    bests = maximum.(deviations)
-
-    maximum(bests[p] - actuals[p] for p in 1:N)
-end
-
 function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {N}
     T = eltype(x_template)
     n = length(x_template)
@@ -86,13 +75,35 @@ function lu_det_sign(A::Matrix{Float64}, ipiv::Vector{BlasInt})
     return s
 end
 
+
+function lu_det_sign_and_rcond(A::Matrix{Float64}, ipiv::Vector{BlasInt})
+    s = 1.0
+    min_d = Inf
+    max_d = 0.0
+    @inbounds for i in axes(A, 1)
+        val = A[i, i]
+        if val < 0.0
+            s = -s
+        end
+        if ipiv[i] != i
+            s = -s
+        end
+
+        abs_val = abs(val)
+        min_d = min(min_d, abs_val)
+        max_d = max(max_d, abs_val)
+    end
+    # Add a tiny epsilon to prevent divide-by-zero
+    rcond = min_d / (max_d + 1e-18)
+    return s, rcond
+end
+
 function fast_lu!(A::Matrix{Float64}, ipiv::Vector{BlasInt})
     A, ipiv, info = LinearAlgebra.LAPACK.getrf!(A, ipiv)
     return info
 end
 
 function update_predictor_jacobian!(x::Vector{Float64}, lambda::Float64, dx::Vector{Float64}, dlambda::Float64, utils::NTuple{N}, ws) where {N}
-    n = length(x)
     mu = splitviews(x, size(first(utils)) .- 1)
     redlograt_to_prob!.(ws.pi, mu)
 
@@ -102,28 +113,24 @@ function update_predictor_jacobian!(x::Vector{Float64}, lambda::Float64, dx::Vec
     t_val = expm1(lambda)
 
     jacobian_x!(ws.Fx, ws.pi, t_val, ws.dudpi, utils)
-    jacobian_t!(ws.Ft, ws.ubar, mu, utils, t_val + 1.0)
+    jacobian_t!(ws.Ft, ws.ubar, mu, utils, t_val)
 
-    @inbounds for j in 1:n
+    @inbounds for j in axes(ws.J_aug, 2)
         ws.J_aug[end, j] = dx[j]
     end
     ws.J_aug[end, end] = dlambda
 
-    fill!(ws.rhs_aug, 0.0)
-    ws.rhs_aug[end] = 1.0
-
     fast_lu!(ws.J_aug, ws.ipiv)
 end
 
-function predict_direction!(dx::Vector{Float64}, dlambda::Float64, ws)
-    n = length(dx)
+function predict_direction!(dx::Vector{Float64}, ws)
     fill!(ws.rhs_aug, 0.0)
     ws.rhs_aug[end] = 1.0
 
     LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
 
     norm_factor = 1.0 / sqrt(dot(ws.rhs_aug, ws.rhs_aug))
-    @inbounds for i in 1:n
+    @inbounds for i in eachindex(dx)
         dx[i] = ws.rhs_aug[i] * norm_factor
     end
     dlambda = ws.rhs_aug[end] * norm_factor
@@ -147,7 +154,7 @@ function correct!(
     ws;
     max_iters::Int=3,
     abs_tol::Float64=1e-9,
-    rel_tol::Float64=1e-12
+    rel_tol::Float64=1e-11
 ) where {N}
     copyto!(x_nxt, xpred)
     lambda_out = lambda_pred
@@ -164,19 +171,21 @@ function correct!(
 
         residual!(ws.res, mu, ws.ubar, x_nxt, t_val, utils)
 
+       # println(norm(ws.res))
+
         @. ws.x_diff = x_nxt - xpred
         r_con = dot(ws.x_diff, dx) + (lambda_out - lambda_pred) * dlambda
 
-        if dot(ws.res, ws.res) + r_con^2 < abs_tol^2 && i >= 1
-            return STATUS_SUCCESS, i, x_nxt, lambda_out
+        if dot(ws.res, ws.res) + r_con^2 < abs_tol^2
+            return STATUS_SUCCESS, x_nxt, lambda_out
         end
 
         if i == max_iters
-            return STATUS_MAX_ITERS, max_iters, x_nxt, lambda_out
+            return STATUS_MAX_ITERS, x_nxt, lambda_out
         end
 
         jacobian_x!(ws.Fx, ws.pi, t_val, ws.dudpi, utils)
-        jacobian_t!(ws.Ft, ws.ubar, mu, utils, t_val + 1.0)
+        jacobian_t!(ws.Ft, ws.ubar, mu, utils, t_val)
 
         @inbounds for j in 1:n
             ws.J_aug[end, j] = dx[j]
@@ -190,9 +199,9 @@ function correct!(
 
 
         info = fast_lu!(ws.J_aug, ws.ipiv)
-         if info > 0
-            return STATUS_SINGULAR, i, x_nxt, lambda_out
-         end
+        if info > 0
+            return STATUS_SINGULAR, x_nxt, lambda_out
+        end
 
         LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
 
@@ -212,20 +221,20 @@ function correct!(
 
         # Catch wildly diverging Newton steps before they corrupt the Jacobian with Infs.
         if !isfinite(lambda_out) || lambda_out > 50.0 || lambda_out < -20.0 || any(!isfinite, x_nxt)
-            return STATUS_LARGE_DISTANCE, i, x_nxt, lambda_out
+         #   println("hey")
+            return STATUS_LARGE_DISTANCE, x_nxt, lambda_out
         end
 
-        if step_norm < rel_tol * val_norm  && i >= 1
-            return STATUS_SUCCESS, i + 1, x_nxt, lambda_out
+        if step_norm < rel_tol * val_norm
+            return STATUS_SUCCESS, x_nxt, lambda_out
         end
     end
 
-    return STATUS_MAX_ITERS, max_iters, x_nxt, lambda_out
+    return STATUS_MAX_ITERS, x_nxt, lambda_out
 end
 
 function validate_step!(
     status::StepStatus,
-    iters::Int,
     x_nxt::Vector{Float64},
     lambda_new::Float64,
     xpred::Vector{Float64},
@@ -242,25 +251,31 @@ function validate_step!(
         dist_sq += (x_nxt[j] - xpred[j])^2
     end
 
-    if dist_sq > (2.0 * ds)^2
+    if dist_sq > (1.0 * ds)^2
         return STATUS_LARGE_DISTANCE
     end
 
-    cur_det_sign = lu_det_sign(ws.J_aug, ws.ipiv)
-    if ws.det_sign[1] != 0.0 && cur_det_sign != ws.det_sign[1]
-        if dist_sq > (0.5 * ds)^2 || ds > 1e-5
-            return STATUS_JUMP
-        else
+    cur_det_sign, rcond = lu_det_sign_and_rcond(ws.J_aug, ws.ipiv)
+    if rcond >= 1e-5
+        if ws.det_sign[1] == 0.0
             ws.det_sign[1] = cur_det_sign
+        elseif cur_det_sign != ws.det_sign[1]
+            if (dist_sq > (0.5 * ds)^2 || ds > 1e-5)
+                return STATUS_JUMP
+            else
+                ws.det_sign[1] = cur_det_sign
+            end
         end
+    else
+        ws.det_sign[1] = 0.0
     end
 
     return STATUS_SUCCESS
 end
 
 
-#using Printf
-#function strat_format(xs) join([@sprintf("%.5f ", w) for w in xs]) end
+using Printf
+function strat_format(xs) join([@sprintf("%.5f ", w) for w in xs]) end
 
 
 """
@@ -289,33 +304,34 @@ function nash(
     successes_in_row = 0
     regret = NaN
     stall = false
-
     while lambda <= stop_lambda && iteration <= stop_iters && !stall && lambda > -10.0
         update_predictor_jacobian!(x, lambda, dx, dlambda, utils, ws)
 
         regret = max_deviation_incentive(ws.ubar, ws.pi)
 
-        #println(strat_format.(ws.pi)..., @sprintf("%d %.5f %.5f", ws.det_sign[1], expm1(lambda), ds))
+     #  println(strat_format.(ws.pi)..., @sprintf("%d %.5f %.5f", ws.det_sign[1], expm1(lambda), ds))
 
+   # println(dx)
         if regret <= stop_eps
             break
         end
 
-        dx, dlambda = predict_direction!(dx, dlambda, ws)
+        dx, dlambda = predict_direction!(dx, ws)
+
+        # Prevent exponential runaway that causes Float64 Inf,
+        # and avoid massively overshooting the stop condition.
+        if lambda + ds * dlambda > stop_lambda + 2.0
+            ds = (stop_lambda + 2.0 - lambda) / dlambda
+        end
+#println()
 
         while true
-            # Prevent exponential runaway that causes Float64 Inf,
-            # and avoid massively overshooting the stop condition.
-            if lambda + ds * dlambda > stop_lambda + 2.0
-                ds = (stop_lambda + 2.0 - lambda) / dlambda
-            end
-            # ------------------------
-
             xpred, lambda_pred = predict_step!(ws.xpred, x, lambda, dx, dlambda, ds)
 
-            corr_status, iters, x_nxt, lambda_nxt = correct!(ws.x_nxt, xpred, lambda_pred, dx, dlambda, utils, ws)
-            val_status = validate_step!(corr_status, iters, x_nxt, lambda_nxt, xpred, lambda_pred, ds, ws)
+            corr_status, x_nxt, lambda_nxt = correct!(ws.x_nxt, xpred, lambda_pred, dx, dlambda, utils, ws)
+            val_status = validate_step!(corr_status, x_nxt, lambda_nxt, xpred, lambda_pred, ds, ws)
 
+          #  @info "" corr_status
             if val_status == STATUS_SUCCESS
                 copyto!(x, x_nxt)
                 lambda = lambda_nxt
@@ -341,5 +357,5 @@ function nash(
     update_predictor_jacobian!(x, lambda, dx, dlambda, utils, ws)
     regret = max_deviation_incentive(ws.ubar, ws.pi)
 
-    return ws.pi, (; t = expm1(lambda), iteration, regret, stall)
+    return ws.pi, (; t=expm1(lambda), iteration, regret, stall)
 end

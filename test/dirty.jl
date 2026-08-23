@@ -169,7 +169,7 @@ A = 5
 D = 5
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
-pi,status = nash(Us; stop_t=1e12, stop_eps=NaN)
+pi,status = nash(Us)
 
 
 Random.seed!(3462345634)
@@ -179,7 +179,7 @@ A = 5
 D = 5
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
-@time pi,status = nash(Us; stop_t=1e6, stop_eps=1e-6)
+@time pi,status = nash(Us)
 print_strats(pi)
 @show status
 
