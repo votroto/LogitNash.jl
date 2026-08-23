@@ -96,7 +96,7 @@ function jacobian_t_analytic_vs_finitedifference()
     LogitNash.unilateral_derivatives!(wsdudpi, utils, _pi)
     LogitNash.unilateral_deviations_from_derivatives!(wsubar, wsdudpi, _pi)
 
-    LogitNash.jacobian_t!(wsFt, wsubar, mu, utils, 1.0)
+    LogitNash.jacobian_t!(wsFt, wsubar, mu, utils, 0.0)
 
     Ft_fd = fd_jacobian(t -> residual_wrapper(x, only(t), utils), [t])
 

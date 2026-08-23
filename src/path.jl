@@ -62,20 +62,6 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
     return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign)
 end
 
-function lu_det_sign(A::Matrix{Float64}, ipiv::Vector{BlasInt})
-    s = 1.0
-    @inbounds for i in axes(A, 1)
-        if A[i, i] < 0.0
-            s = -s
-        end
-        if ipiv[i] != i
-            s = -s
-        end
-    end
-    return s
-end
-
-
 function lu_det_sign_and_rcond(A::Matrix{Float64}, ipiv::Vector{BlasInt})
     s = 1.0
     min_d = Inf
@@ -115,7 +101,7 @@ function update_predictor_jacobian!(x::Vector{Float64}, lambda::Float64, dx::Vec
     jacobian_x!(ws.Fx, ws.pi, t_val, ws.dudpi, utils)
     jacobian_t!(ws.Ft, ws.ubar, mu, utils, t_val)
 
-    @inbounds for j in axes(ws.J_aug, 2)
+    @inbounds for j in eachindex(dx)
         ws.J_aug[end, j] = dx[j]
     end
     ws.J_aug[end, end] = dlambda
@@ -153,12 +139,11 @@ function correct!(
     utils::NTuple{N},
     ws;
     max_iters::Int=3,
-    abs_tol::Float64=1e-9,
+    abs_tol::Float64=NaN,
     rel_tol::Float64=1e-11
 ) where {N}
     copyto!(x_nxt, xpred)
     lambda_out = lambda_pred
-    n = length(x_nxt)
 
     for i in 0:max_iters
         mu = splitviews(x_nxt, size(first(utils)) .- 1)
@@ -170,8 +155,6 @@ function correct!(
         t_val = expm1(lambda_out)
 
         residual!(ws.res, mu, ws.ubar, x_nxt, t_val, utils)
-
-       # println(norm(ws.res))
 
         @. ws.x_diff = x_nxt - xpred
         r_con = dot(ws.x_diff, dx) + (lambda_out - lambda_pred) * dlambda
@@ -187,12 +170,12 @@ function correct!(
         jacobian_x!(ws.Fx, ws.pi, t_val, ws.dudpi, utils)
         jacobian_t!(ws.Ft, ws.ubar, mu, utils, t_val)
 
-        @inbounds for j in 1:n
+        @inbounds for j in eachindex(dx)
             ws.J_aug[end, j] = dx[j]
         end
         ws.J_aug[end, end] = dlambda
 
-        @inbounds for j in 1:n
+        @inbounds for j in eachindex(ws.res)
             ws.rhs_aug[j] = -ws.res[j]
         end
         ws.rhs_aug[end] = -r_con
@@ -208,7 +191,7 @@ function correct!(
         dlambda_step = ws.rhs_aug[end]
         step_norm_sq = dlambda_step^2
 
-        @inbounds for j in 1:n
+        @inbounds for j in eachindex(ws.dx_step)
             ws.dx_step[j] = ws.rhs_aug[j]
             step_norm_sq += ws.dx_step[j]^2
         end
@@ -221,7 +204,6 @@ function correct!(
 
         # Catch wildly diverging Newton steps before they corrupt the Jacobian with Infs.
         if !isfinite(lambda_out) || lambda_out > 50.0 || lambda_out < -20.0 || any(!isfinite, x_nxt)
-         #   println("hey")
             return STATUS_LARGE_DISTANCE, x_nxt, lambda_out
         end
 
@@ -275,7 +257,9 @@ end
 
 
 using Printf
-function strat_format(xs) join([@sprintf("%.5f ", w) for w in xs]) end
+function strat_format(xs)
+    join([@sprintf("%.5f ", w) for w in xs])
+end
 
 
 """
@@ -304,14 +288,13 @@ function nash(
     successes_in_row = 0
     regret = NaN
     stall = false
-    while lambda <= stop_lambda && iteration <= stop_iters && !stall && lambda > -10.0
+    while lambda <= stop_lambda && iteration <= stop_iters && !stall #&& lambda > -10.0
         update_predictor_jacobian!(x, lambda, dx, dlambda, utils, ws)
 
         regret = max_deviation_incentive(ws.ubar, ws.pi)
 
-     #  println(strat_format.(ws.pi)..., @sprintf("%d %.5f %.5f", ws.det_sign[1], expm1(lambda), ds))
+        println(strat_format.(ws.pi)..., @sprintf(" %.5f", expm1(lambda)))
 
-   # println(dx)
         if regret <= stop_eps
             break
         end
@@ -323,7 +306,6 @@ function nash(
         if lambda + ds * dlambda > stop_lambda + 2.0
             ds = (stop_lambda + 2.0 - lambda) / dlambda
         end
-#println()
 
         while true
             xpred, lambda_pred = predict_step!(ws.xpred, x, lambda, dx, dlambda, ds)
@@ -331,7 +313,6 @@ function nash(
             corr_status, x_nxt, lambda_nxt = correct!(ws.x_nxt, xpred, lambda_pred, dx, dlambda, utils, ws)
             val_status = validate_step!(corr_status, x_nxt, lambda_nxt, xpred, lambda_pred, ds, ws)
 
-          #  @info "" corr_status
             if val_status == STATUS_SUCCESS
                 copyto!(x, x_nxt)
                 lambda = lambda_nxt
@@ -358,4 +339,168 @@ function nash(
     regret = max_deviation_incentive(ws.ubar, ws.pi)
 
     return ws.pi, (; t=expm1(lambda), iteration, regret, stall)
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function track_path!(
+    x_start::Vector{Float64},
+    lambda_start::Float64,
+    dx_start::Vector{Float64},
+    dlambda_start::Float64,
+    utils::NTuple{N, AbstractArray{Float64, N}},
+    ws;
+    max_steps::Int = 100
+) where {N}
+    x = copy(x_start)
+    lambda = lambda_start
+    dx = copy(dx_start)
+    dlambda = dlambda_start
+
+    # Reset determinant sign so the step validator doesn't reject
+    # the first step based on history from a previous track.
+    ws.det_sign[1] = 0.0
+
+    ds = 0.01
+    successes_in_row = 0
+
+    for _ in 1:max_steps
+        # Terminate if lambda goes completely out of bounds to avoid Inf
+        if lambda > 20.0 || lambda < -20.0
+            break
+        end
+
+        update_predictor_jacobian!(x, lambda, dx, dlambda, utils, ws)
+
+        # Print current state. The spaces align perfectly for Gnuplot.
+        println(strat_format.(ws.pi)..., @sprintf(" %.5f", expm1(lambda)))
+
+        # Update tangent direction
+        dx, dlambda = predict_direction!(dx, ws)
+
+        stall = false
+        while true
+            xpred, lambda_pred = predict_step!(ws.xpred, x, lambda, dx, dlambda, ds)
+
+            corr_status, x_nxt, lambda_nxt = correct!(ws.x_nxt, xpred, lambda_pred, dx, dlambda, utils, ws)
+            val_status = validate_step!(corr_status, x_nxt, lambda_nxt, xpred, lambda_pred, ds, ws)
+
+            if val_status == STATUS_SUCCESS
+                copyto!(x, x_nxt)
+                lambda = lambda_nxt
+                break
+            else
+                ds /= 2.0
+                successes_in_row = 0
+                if ds <= 1e-10
+                    stall = true
+                    break
+                end
+            end
+        end
+
+        if stall
+            break
+        end
+
+        successes_in_row += 1
+        if successes_in_row >= 5
+            successes_in_row = 0
+            ds *= 2.0
+        end
+    end
+end
+
+
+function prob_to_redlograt(y::AbstractVector)
+    x = similar(y, length(y)-1)
+    for i in eachindex(x)
+        x[i] = log(y[i] / y[end])
+    end
+    x
+end
+
+"""
+    explore_manifold(utils; num_starts=50, steps_per_dir=100, lambda_range=(-5.0, 5.0), x_scale=2.0)
+
+Randomly searches for points on the equilibrium manifold and tracks them in both directions.
+Prints the visited points to stdout in a format ready for Gnuplot.
+"""
+function explore_manifold(
+    utils::NTuple{N, AbstractArray{Float64, N}};
+    num_starts::Int = 200,
+    steps_per_dir::Int = 200,
+    lambda_range::Tuple{Float64, Float64} = (0.0, 8.0),
+    x_scale::Float64 = 2.0
+) where {N}
+    validate_game(utils)
+
+    dims = size(first(utils))
+    n = sum(dims[i] - 1 for i in 1:N)
+
+    # Create workspace using a dummy template vector
+    x_template = zeros(n)
+    ws = make_hc_workspace(x_template, dims)
+
+    # Pre-allocate variables for the random projection step
+    dx_proj = zeros(n)
+    dlambda_proj = 1.0
+
+    for ii in 0:num_starts
+        # 1. Random starting guess
+
+if ii==0
+        x_guess = uniform_xprofile(utils)
+        lambda_guess = 0.0
+
+else
+        x_guess = vcat(map(d -> prob_to_redlograt(normalize(rand(d), 1)), dims)...) #randn(n) .* x_scale
+        lambda_guess = rand(Float64) * (lambda_range[2] - lambda_range[1]) + lambda_range[1]
+end
+
+        # 2. Project onto the manifold
+        # Using dx=0, dlambda=1 means the corrector is constrained strictly
+        # to the lambda_guess plane, giving Newton the freedom to solve for x.
+        corr_status, x_root, lambda_root = correct!(
+            ws.x_nxt, x_guess, lambda_guess,
+            dx_proj, dlambda_proj, utils, ws;
+            max_iters = 200 # Allow more iterations for global convergence
+        )
+
+        if corr_status == STATUS_SUCCESS
+            # 3. Establish initial tangent
+            # We seed the Jacobian with our projection direction, and let
+            # predict_direction! naturally find the null space.
+            update_predictor_jacobian!(x_root, lambda_root, dx_proj, dlambda_proj, utils, ws)
+
+            dx0 = copy(dx_proj)
+            dx0, dlambda0 = predict_direction!(dx0, ws)
+    ws = make_hc_workspace(x_template, dims)
+
+            # 4. Track Forward
+            track_path!(x_root, lambda_root, dx0, dlambda0, utils, ws; max_steps=steps_per_dir)
+
+            # Gnuplot block separator (double blank line signifies a new dataset block)
+            println("\n")
+    ws = make_hc_workspace(x_template, dims)
+
+            # 5. Track Backward
+            # Flipping the signs on the tangent perfectly reverses the tracker
+            track_path!(x_root, lambda_root, -dx0, -dlambda0, utils, ws; max_steps=steps_per_dir)
+
+            println("\n")
+        end
+    end
 end
