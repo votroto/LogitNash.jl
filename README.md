@@ -3,26 +3,24 @@
 ![Coverage](https://gist.githubusercontent.com/votroto/7cc2561e5897bc8c43270ce659b45199/raw/LogitNashCoverage.svg)
 
 > [!WARNING]
-> Package is not registered yet -- it is minimally tested, the code quality is low, and the API is not stable!
+> Before going out of pre-release, the API must be finalized. If you have suggestions, please get in touch!
 
-Compute a mixed $\epsilon$-Nash equilibrium of an N-player game by tracing a logit equilibrium path satisfying
+Approximates a specific mixed Nash equilibrium of a multiplayer general-sum game up to a desired precision by tracing the principal logit equilibrium branch
 
-$$
-\pi_{ij} = \frac{e^{tu_i(j,\pi_{-i})}}{\sum_k e^{tu_i(k,\pi_{-i})}}
-$$
-
-from a uniform profile at $t=0$ to a generically unique Nash equilibrium at infinity.
+$$\pi_p \propto \left(e^{\lambda U_p^i(\pi_{-p})}\right)_i$$
 
 The algorithm stops when either:
- - ($\epsilon$-NE condition) there is no unilateral deviation from `pi` more profitable than `stop_eps`,
- - (logit condition) a solution is found for the precision parameter `t` greater or equal to `stop_t`,
+ - ($\epsilon$-NE condition) there is no unilateral deviation from $\pi$ more profitable than `stop_eps`,
+ - (logit condition) a solution is found for the precision parameter $\lambda$ greater or equal to `stop_lambda`,
  - or the maximum number of iterations of `stop_iters` is reached.
 
 ## Speed and Stability
 
-On some benchmarks, *LogitNash.jl* runs **48 times faster** than *gambit-logit*!
+*LogitNash.jl* currently achieves a speedup of **82×** compared to *gambit-logit*! Check our our [Benchmarks](https://github.com/votroto/LogitNash.jl/wiki/Benchmarks) wiki page for details.
 
-For more details, check out the preliminary [benchmarks](https://github.com/votroto/LogitNash.jl/wiki/Benchmarks) on *Gamut* game classes.
+ - Measured the time to reach $\lambda = 10^6$ over 100 samples from `RandomGame` GAMUT distribution with 5 actions and 6 players using a single thread of Xeon Gold 6146.
+
+ Not convinced? Benchmark it yourself with the prepared `/benchmark` scripts for Bash or Slurm.
 
 ## Install
 
@@ -55,26 +53,13 @@ pi_2 = [0.0, 1.0]
 pi_3 = [0.0, 1.0]
 ```
 
-## Notes
-- *The project is a work-in-progress. Feedback is welcome, so is help.*
-- *The Jacobian Kernels are specialized per the number of players. The first time an N-player game is solved will incur a compilation time penalty.*
-- *There is no specialization for zero-sum games. A reasonable linear program will always be faster.*
-
-### TBD
-
-There is still room for improvement.
-
- 1. There is currently no endgame implemented. Increasing the target precision parameter significantly past $10^6$ increases the likelihood of failure due to floating-point noise. A switch to a complementarity-based formulation could quickly improve the NE approximations by two orders of magnitude.
- 2. The Jacobians are recomputed at every Newton iteration.
- 3. There are a lot of pointless and repeated calculations in the algorithm.
- 4. There is no parallelization (except for any done by BLAS/LAPACK).
- 5. If the paths are smooth, the predictor can likely be improved massively.
- 6. There is no pre-processing, such as removal of dominated strategies.
- 7. All the kernels are optimized only for dense floating-point utilities.
-
 ## Acknowledgements
 
-Many thanks go to `BifurcationKit.jl`, `HomotopyContinuation.jl`, `bertini`, `gambit-logit` for their source code and manuals; to ChatGPT for deriving the jacobians; to Gemini and GitHub Copilot for refactoring; to Mosek and Gurobi for their academic licences for testing, and to AIC for their inexplicable continued support.
+Continued development and solver comparison benchmarks are possible thanks to:
+- The support by the Czech Science Foundation grant--no. 24-12046S.
+- RCI providing access to the computational infrastructure of the OP VVV funded project CZ.02.1.01/0.0/0.0/16_019/0000765.
+
+Many thanks go to `BifurcationKit.jl`, `HomotopyContinuation.jl`, `bertini`, `gambit-logit` for their source code and manuals; to ChatGPT for deriving the jacobians; to Gemini for source-porting a lot of testing utilities, and GitHub Copilot for refactoring; to Mosek, Gurobi and PATH for their various available licences for testing, and to AIC for their inexplicable continued support.
 
 Based on the papers:
 

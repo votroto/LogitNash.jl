@@ -155,31 +155,3 @@ function parse_nfg(io::Union{IOStream,AbstractString})
     bytes = Mmap.mmap(io)
     return parse_nfg(bytes)
 end
-
-function run_test()
-    begin
-        tensors = parse_nfg("/tmp/games/game1.game")
-        ne, status = nash(tensors)
-    end
-
-    times_read = fill(NaN, 100)
-    times_nash = fill(NaN, 100)
-
-    for i in 1:100
-        try
-        @show i
-        tr = @timed tensors = parse_nfg("/tmp/games/game$i.game")
-        tn = @timed ne, status = nash(tensors)
-
-        GC.gc()          # Force a garbage collection
-
-        @assert status.stall == false
-        @assert status.t >= 500000 || status.regret <= 1e-6
-
-        times_read[i] = tr.time
-        times_nash[i] = tn.time
-        catch
-        end
-    end
-    return times_read, times_nash
-end

@@ -1,3 +1,4 @@
+# Usage:     this file    result folder (without trailing /)
 # gnuplot -c plot.gnuplot gamut.1787679980
 
 EXPERIMENTID=ARG1
