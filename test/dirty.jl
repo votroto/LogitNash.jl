@@ -1,14 +1,12 @@
-include("../src/spaces.jl")
-include("../src/turocy.jl")
-include("../src/path.jl")
-
+using Revise
+using LogitNash
 using Random
 using LinearAlgebra
 
 function export_gambit_format_buf(payoffs)
     players = eachindex(payoffs)
 
-    player_string = join(["\"$i\"" for i in players], " ")
+    player_string = join(["\"p$i\"" for i in players], " ")
     dim_string = join(size(first(payoffs)), " ")
 
     ioin = IOBuffer()
@@ -223,3 +221,77 @@ print_strats(pig)
 
 
 =#
+#=
+
+using Combinatorics
+
+function generate_blotto_actions(coins::Int, fields::Int)
+    actions = Vector{Vector{Int}}()
+    for c in combinations(1:(coins + fields - 1), fields - 1)
+        pushfirst!(c, 0)
+        push!(c, coins + fields)
+        push!(actions, [c[i+1] - c[i] - 1 for i in 1:fields])
+    end
+    return actions
+end
+
+function evaluate_blotto_game(allocations::Vector{Vector{Int}})
+    num_players = length(allocations)
+    num_fields = length(allocations[1])
+    points = zeros(Int, num_players)
+
+    for f in 1:num_fields
+        field_allocs = [allocations[p][f] for p in 1:num_players]
+        max_coins = maximum(field_allocs)
+        winners = findall(x -> x == max_coins, field_allocs)
+
+        if length(winners) == 1
+            points[winners[1]] += 1
+        end
+    end
+
+    max_points = maximum(points)
+    game_winners = findall(x -> x == max_points, points)
+    num_winners = length(game_winners)
+
+    utilities = zeros(Int8, num_players)
+    if num_winners == num_players
+        return utilities
+    end
+
+    num_losers = num_players - num_winners
+    for p in 1:num_players
+        if p in game_winners
+            utilities[p] = Int8(num_losers)
+        else
+            utilities[p] = Int8(-num_winners)
+        end
+    end
+
+    return utilities
+end
+
+# Generates just the N tensors of type Int8 for `players`
+function generate_blotto_tensors(players::Int, coins::Int, fields::Int)
+    actions = generate_blotto_actions(coins, fields)
+    num_actions = length(actions)
+
+    dims = ntuple(_ -> num_actions, players)
+    tensors = ntuple(_ -> zeros(Int8, dims) , players)
+
+    for idx in CartesianIndices(dims)
+        allocs = [actions[idx.I[p]] for p in 1:players]
+        utils = evaluate_blotto_game(allocs)
+
+        for p in 1:players
+            tensors[p][idx] = utils[p]
+        end
+    end
+
+    return tensors
+end
+
+tensors = generate_blotto_tensors(4, 10, 3)
+=#
+#println("Generated $(length(tensors)) tensors of shape $(size(tensors[1])) with type $(eltype(tensors[1]))")
+#println("Approximate memory per tensor: $(Base.summarysize(tensors[1]) / 1024^2 |> x -> round(x, digits=2)) MB")

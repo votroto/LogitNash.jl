@@ -32,7 +32,7 @@ function validate_game(utils::NTuple{N,AbstractArray}) where N
 end
 
 function max_deviation_incentive(ubar::NTuple{N}, pi::NTuple{N}) where N
-    maximum(maximum(ubar[p]) - dot(ubar[p], pi[p]) for p in 1:N)
+    sum(maximum(ubar[p]) - dot(ubar[p], pi[p]) for p in 1:N)
 end
 
 function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {N}
@@ -139,7 +139,7 @@ function correct!(
     utils::NTuple{N},
     ws;
     max_iters::Int=3,
-    abs_tol::Float64=NaN,
+    abs_tol::Float64=1e-9,
     rel_tol::Float64=1e-11
 ) where {N}
     copyto!(x_nxt, xpred)
@@ -266,11 +266,11 @@ end
     nash(utils::NTuple{N,AbstractArray{Float64,N}}; stop_iters::Int=1000, stop_t::Float64=1e6, stop_eps::Float64=1e-6) where {N}
 """
 function nash(
-    utils::NTuple{N,AbstractArray{Float64,N}};
+    utils::NTuple{N,AbstractArray{F,N}};
     stop_iters::Int=1000,
     stop_t::Float64=1e6,
     stop_eps::Float64=1e-6
-) where {N}
+) where {F,N}
     validate_game(utils)
 
     x = uniform_xprofile(utils)
@@ -293,7 +293,7 @@ function nash(
 
         regret = max_deviation_incentive(ws.ubar, ws.pi)
 
-        println(strat_format.(ws.pi)..., @sprintf(" %.5f", expm1(lambda)))
+        #  println(strat_format.(ws.pi)..., @sprintf(" %.5f", expm1(lambda)))
 
         if regret <= stop_eps
             break
@@ -360,9 +360,9 @@ function track_path!(
     lambda_start::Float64,
     dx_start::Vector{Float64},
     dlambda_start::Float64,
-    utils::NTuple{N, AbstractArray{Float64, N}},
+    utils::NTuple{N,AbstractArray{Float64,N}},
     ws;
-    max_steps::Int = 100
+    max_steps::Int=100
 ) where {N}
     x = copy(x_start)
     lambda = lambda_start
@@ -385,7 +385,7 @@ function track_path!(
         update_predictor_jacobian!(x, lambda, dx, dlambda, utils, ws)
 
         # Print current state. The spaces align perfectly for Gnuplot.
-        println(strat_format.(ws.pi)..., @sprintf(" %.5f", expm1(lambda)))
+        println(strat_format.(ws.pi)..., @sprintf("%.5f", expm1(lambda)))
 
         # Update tangent direction
         dx, dlambda = predict_direction!(dx, ws)
@@ -439,11 +439,11 @@ Randomly searches for points on the equilibrium manifold and tracks them in both
 Prints the visited points to stdout in a format ready for Gnuplot.
 """
 function explore_manifold(
-    utils::NTuple{N, AbstractArray{Float64, N}};
-    num_starts::Int = 200,
-    steps_per_dir::Int = 200,
-    lambda_range::Tuple{Float64, Float64} = (0.0, 8.0),
-    x_scale::Float64 = 2.0
+    utils::NTuple{N,AbstractArray{Float64,N}};
+    num_starts::Int=200,
+    steps_per_dir::Int=200,
+    lambda_range::Tuple{Float64,Float64}=(0.0, 8.0),
+    x_scale::Float64=2.0
 ) where {N}
     validate_game(utils)
 
@@ -461,14 +461,14 @@ function explore_manifold(
     for ii in 0:num_starts
         # 1. Random starting guess
 
-if ii==0
-        x_guess = uniform_xprofile(utils)
-        lambda_guess = 0.0
+        if ii==0
+            x_guess = uniform_xprofile(utils)
+            lambda_guess = 0.0
 
-else
-        x_guess = vcat(map(d -> prob_to_redlograt(normalize(rand(d), 1)), dims)...) #randn(n) .* x_scale
-        lambda_guess = rand(Float64) * (lambda_range[2] - lambda_range[1]) + lambda_range[1]
-end
+        else
+            x_guess = vcat(map(d -> prob_to_redlograt(normalize(rand(d), 1)), dims)...) #randn(n) .* x_scale
+            lambda_guess = rand(Float64) * (lambda_range[2] - lambda_range[1]) + lambda_range[1]
+        end
 
         # 2. Project onto the manifold
         # Using dx=0, dlambda=1 means the corrector is constrained strictly
@@ -476,7 +476,7 @@ end
         corr_status, x_root, lambda_root = correct!(
             ws.x_nxt, x_guess, lambda_guess,
             dx_proj, dlambda_proj, utils, ws;
-            max_iters = 200 # Allow more iterations for global convergence
+            max_iters=200 # Allow more iterations for global convergence
         )
 
         if corr_status == STATUS_SUCCESS
@@ -487,14 +487,14 @@ end
 
             dx0 = copy(dx_proj)
             dx0, dlambda0 = predict_direction!(dx0, ws)
-    ws = make_hc_workspace(x_template, dims)
+            ws = make_hc_workspace(x_template, dims)
 
             # 4. Track Forward
             track_path!(x_root, lambda_root, dx0, dlambda0, utils, ws; max_steps=steps_per_dir)
 
             # Gnuplot block separator (double blank line signifies a new dataset block)
             println("\n")
-    ws = make_hc_workspace(x_template, dims)
+            ws = make_hc_workspace(x_template, dims)
 
             # 5. Track Backward
             # Flipping the signs on the tangent perfectly reverses the tracker

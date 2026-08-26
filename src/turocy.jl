@@ -72,8 +72,8 @@ end
 
 
 @generated function unilateral_derivatives!(
-    results::NTuple{N,NTuple{N,Matrix{T}}},
-    payoffs::NTuple{N,Array{T,N}},
+    results::NTuple{N,NTuple{N,Matrix}},
+    payoffs::NTuple{N,Array},
     pi::NTuple{N,Vector{T}}
 ) where {N,T}
 
