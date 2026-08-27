@@ -56,8 +56,8 @@ pi_3 = [0.0, 1.0]
 ## Acknowledgements
 
 Continued development and solver comparison benchmarks are possible thanks to:
-- The support by the Czech Science Foundation grant--no. 24-12046S.
-- The computational infrastructure of the OP VVV funded project CZ.02.1.01/0.0/0.0/16_019/0000765 access provided by RCI.
+- the support by the Czech Science Foundation grant--no. 24-12046S,
+- the computational infrastructure of the OP VVV funded project CZ.02.1.01/0.0/0.0/16_019/0000765 access provided by RCI.
 
 Many thanks go to `BifurcationKit.jl`, `HomotopyContinuation.jl`, *Bertini*, and *Gambit* for their source code and manuals; to ChatGPT for deriving the jacobians; to Gemini for source-porting a lot of testing utilities, and GitHub Copilot for refactoring; to Mosek, Gurobi and PATH for their various available licences for testing, and to AIC for their inexplicable continued support.
 
