@@ -7,7 +7,7 @@
 
 Approximates a specific mixed Nash equilibrium of a multiplayer general-sum game up to a desired precision by tracing the principal logit equilibrium branch
 
-$$\pi_p \propto \left(e^{\lambda U_p^i(\pi_{-p})}\right)_i$$
+$$\pi_p \propto \left(e^{\lambda U_p^i(\pi_{-p})}\right)_i.$$
 
 The algorithm stops when either:
  - ($\epsilon$-NE condition) there is no unilateral deviation from $\pi$ more profitable than `stop_eps`,
@@ -18,7 +18,7 @@ The algorithm stops when either:
 
 *LogitNash.jl* currently achieves a speedup of **82×** compared to *gambit-logit*! Check our our [Benchmarks](https://github.com/votroto/LogitNash.jl/wiki/Benchmarks) wiki page for details.
 
- - Measured the time to reach $\lambda = 10^6$ over 100 samples from `RandomGame` GAMUT distribution with 5 actions and 6 players using a single thread of Xeon Gold 6146.
+ - Measured the time to reach $\lambda = 10^6$ over 100 `random_params` samples from the six-player five-action `RandomGame` GAMUT distribution running on a single thread of Xeon Gold 6146.
 
  Not convinced? Benchmark it yourself with the prepared `/benchmark` scripts for Bash or Slurm.
 

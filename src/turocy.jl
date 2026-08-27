@@ -70,10 +70,10 @@ function build_deriv_loops(d, w, p, N)
     end
 end
 
-
+# dudpi[p][q]
 @generated function unilateral_derivatives!(
     results::NTuple{N,NTuple{N,Matrix}},
-    payoffs::NTuple{N,Array},
+    payoffs::NTuple{N,Array{T,N}},
     pi::NTuple{N,Vector{T}}
 ) where {N,T}
 
