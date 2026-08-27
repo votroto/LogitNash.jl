@@ -1,10 +1,7 @@
-
-
-
 function unilateral_deviations_from_derivatives!(
-    out::NTuple{N,Vector},
-    dudpi::NTuple{N,NTuple{N,Matrix}},
-    pi::NTuple{N,Vector},
+    out::NTuple{N,Vector{Float64}},
+    dudpi::NTuple{N,NTuple{N,Matrix{Float64}}},
+    pi::NTuple{N,Vector{Float64}},
 ) where N
     for p in 1:N
         # We can just pick the first available opponent index to contract out
@@ -17,11 +14,6 @@ function unilateral_deviations_from_derivatives!(
     return out
 end
 
-
-
-
-
-
 function build_deriv_loops(d, w, p, N)
     ad = Symbol("a", d)
 
@@ -31,7 +23,7 @@ function build_deriv_loops(d, w, p, N)
 
         if p == 1
             # Contiguous writes for q != 1
-            writes = [:( (results[1][$q])[a1, $(Symbol("a", q))] += val * $(w[q]) ) for q in 2:N]
+            writes = [:((results[1][$q])[a1, $(Symbol("a", q))] += val * $(w[q])) for q in 2:N]
 
             return quote
                 @simd ivdep for a1 in axes(pay_p, 1)
@@ -41,10 +33,10 @@ function build_deriv_loops(d, w, p, N)
             end
         else
             # Shared scalar reductions for all q > 1
-            accumulators = [:( (results[$p][$q])[$ap, $(Symbol("a", q))] += s_shared * $(w[q]) ) for q in 2:N if q != p]
+            accumulators = [:((results[$p][$q])[$ap, $(Symbol("a", q))] += s_shared * $(w[q])) for q in 2:N if q != p]
 
             return quote
-                s_shared = zero(T)
+                s_shared = 0.0
                 @simd ivdep for a1 in axes(pay_p, 1)
                     val = pay_p[$(a_all...)]
 
@@ -60,7 +52,7 @@ function build_deriv_loops(d, w, p, N)
     # Helper to clearly define which dimensions get hoisted constants
     is_active(q) = (q != p && d != p && d != q)
     next_w = Any[is_active(q) ? Symbol("w_d", d, "_q", q) : w[q] for q in 1:N]
-    assignments = [:( $(next_w[q]) = $(w[q]) * pi[$d][$ad] ) for q in 1:N if is_active(q)]
+    assignments = [:($(next_w[q]) = $(w[q]) * pi[$d][$ad]) for q in 1:N if is_active(q)]
 
     return quote
         for $ad in axes(pay_p, $d)
@@ -72,17 +64,16 @@ end
 
 # dudpi[p][q]
 @generated function unilateral_derivatives!(
-    results::NTuple{N,NTuple{N,Matrix}},
-    payoffs::NTuple{N,Array{T,N}},
-    pi::NTuple{N,Vector{T}}
-) where {N,T}
-
+    results::NTuple{N,NTuple{N,Matrix{Float64}}},
+    payoffs::NTuple{N,Array{R,N}},
+    pi::NTuple{N,Vector{Float64}}
+) where {N,R<:Real}
     math_p_gt_1 = Expr[]
     cleanup_p_gt_1 = Expr[]
 
     # 1. Generate blocks for p > 1
     for p in 2:N
-        init_w = Any[one(T) for _ in 1:N]
+        init_w = Any[1.0 for _ in 1:N]
         body = build_deriv_loops(N, init_w, p, N)
 
         # Pure math loop
@@ -94,12 +85,12 @@ end
         # Cleanup routine
         push!(cleanup_p_gt_1, quote
             LinearAlgebra.transpose!(results[$p][1], results[1][$p])
-            fill!(results[1][$p], zero(T))
+            fill!(results[1][$p], 1.0)
         end)
     end
 
     # 2. Generate block for p = 1
-    init_w_1 = Any[one(T) for _ in 1:N]
+    init_w_1 = Any[1.0 for _ in 1:N]
     body_1 = build_deriv_loops(N, init_w_1, 1, N)
     math_p_1 = quote
         pay_p = payoffs[1]
@@ -108,7 +99,7 @@ end
 
     return quote
         for p in 1:N, q in 2:N
-            p != q && fill!(results[p][q], zero(T))
+            p != q && fill!(results[p][q], 1.0)
         end
 
         @inbounds begin
@@ -123,18 +114,6 @@ end
         end
     end
 end
-
-
-
-
-
-
-
-
-
-
-
-
 
 # Scaled the parameter column from Ft to Fλ for the log . + 1
 function jacobian_t!(J, ubar, mu, u, fac)
@@ -196,7 +175,7 @@ function jacobian_x!(J, pi, lam, dudpi, u::NTuple{N}) where {N}
                 J_col_buf = pd_start
 
                 for eq_a in 1:A_eq
-                    J[eq_start + eq_a - 1, J_col_buf] = zero(eltype(J))
+                    J[eq_start+eq_a-1, J_col_buf] = zero(eltype(J))
                 end
 
                 # Accumulate `c` across all opponent actions into our hijacked column
