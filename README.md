@@ -5,7 +5,7 @@
 > [!WARNING]
 > Before going out of pre-release, the API must be finalized. If you have suggestions, please get in touch!
 
-Approximates a specific mixed Nash equilibrium of a multiplayer general-sum game up to a desired precision by tracing the principal logit equilibrium branch parametrized by $\lambda$
+Approximates a specific mixed Nash equilibrium of a multiplayer general-sum game up to a desired precision by tracing the [principal logit equilibrium branch](https://github.com/votroto/LogitNash.jl/wiki) parametrized by $\lambda$
 
 $$\pi_p \propto \left(e^{\lambda U_p^i(\pi_{-p})}\right)_i.$$
 
