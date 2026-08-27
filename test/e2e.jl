@@ -26,7 +26,7 @@ function e2e_battle_of_the_sexes()
     A = Float64[3 0; 0 2]
     B = Float64[2 0; 0 3]
     payoffs = (A, B)
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     expected_profile = coordination_risk_dominant_eq(payoffs)
     actual = util2d(payoffs, pi)
@@ -38,7 +38,7 @@ function e2e_coordination_wiki()
     A = Float64[2 1; 1 2]
     B = Float64[4 3; 3 4]
     payoffs = (A, B)
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     expected_profile = coordination_risk_dominant_eq(payoffs)
     actual = util2d(payoffs, pi)
@@ -50,7 +50,7 @@ function e2e_coordination_pure()
     A = Float64[8 0; 0 8]
     B = Float64[8 0; 0 8]
     payoffs = (A, B)
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     expected_profile = coordination_risk_dominant_eq(payoffs)
     actual = util2d(payoffs, pi)
@@ -62,7 +62,7 @@ function e2e_coordination_assurance()
     A = Float64[8 0; 0 5]
     B = Float64[8 0; 0 5]
     payoffs = (A, B)
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     expected_profile = coordination_risk_dominant_eq(payoffs)
     actual = util2d(payoffs, pi)
@@ -74,7 +74,7 @@ function e2e_stag_hunt()
     A = Float64[8 0; 7 5]
     B = Float64[8 7; 0 5]
     payoffs = (A, B)
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     expected_profile = coordination_risk_dominant_eq(payoffs)
     actual = util2d(payoffs, pi)
@@ -86,7 +86,7 @@ function e2e_prisonners_dilemma()
     A = Float64[5 0; 8 1]
     B = Float64[5 8; 0 1]
     payoffs = (A, B)
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     expected_profile = ([0, 1], [0, 1])
     actual = util2d(payoffs, pi)
@@ -98,7 +98,7 @@ function e2e_matching_pennies()
     A = Float64[1 -1; -1 1]
     B = Float64[-1 1; 1 -1]
     payoffs = (A, B)
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     expected_profile = ([0.5, 0.5], [0.5, 0.5])
     actual = util2d(payoffs, pi)
@@ -109,7 +109,7 @@ end
 function e2e_guessing()
     U1 = Float64[0 1 4; 1 0 1; 4 1 0]
     payoffs = (U1, -U1)
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     actual = util2d(payoffs, pi)
     expect = util2d(payoffs, ([0.5, 0.0, 0.5], [0.0, 1.0, 0.0]))
@@ -118,7 +118,7 @@ end
 
 function e2e_constant()
     payoffs = (zeros(3, 3), zeros(3, 3))
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     actual = util2d(payoffs, pi)
     expect = util2d(payoffs, ([1/3, 1/3, 1/3], [1/3, 1/3, 1/3]))
@@ -131,7 +131,7 @@ function e2e_three_prisoner_dilemma()
     U3 = Float64[3 1; 1 0;;; 5 2; 2 1]
     payoffs = (U1, U2, U3)
 
-    pi, status = nash(payoffs)
+    pi, status = solve(payoffs)
 
     @test pi[1] ≈ [0, 1] atol=1e-4
     @test pi[2] ≈ [0, 1] atol=1e-4

@@ -5,7 +5,7 @@ using Printf
 
 function timed_solve(data; stop_t=1e6, stop_eps=1e-6)
     t_parse = @timed tensors = parse_nfg(data)
-    t_solve = @timed ne, status = LogitNash.nash(tensors; stop_t, stop_eps)
+    t_solve = @timed ne, status = LogitNash.solve(tensors; stop_t, stop_eps)
 
     err = status.t < stop_t || status.regret > stop_eps || status.stall
     return t_parse, t_solve, err

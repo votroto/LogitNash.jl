@@ -61,7 +61,7 @@ end
 function test_nash_stops_successfully(dimensions, generator; samples=5)
     for _ in 1:samples
         payoffs = ntuple(_ -> generator(dimensions), length(dimensions))
-        _, status = @test_nowarn nash(payoffs; stop_iters=500, stop_lambda=1e6, stop_eps=1e-6)
+        _, status = @test_nowarn solve(payoffs; stop_iters=500, stop_lambda=1e6, stop_eps=1e-6)
         normal_exit = !status.stall && (status.lambda >= 1e6 || status.iteration >= 500 || status.regret <= 1e-6)
         @test normal_exit
         if !normal_exit
@@ -70,16 +70,16 @@ function test_nash_stops_successfully(dimensions, generator; samples=5)
     end
 end
 
-function test_unscaled_games_succeed_directly_or_after_scaling(dimensions, generator; attempts=20)
+function test_unscaled_games_succeed_directly_or_after_scaling(dimensions, generator; attempts=30)
     for _ in 1:attempts
         payoffs_nasty = ntuple(_ -> generator(dimensions), length(dimensions))
-        _, status_nasty = @test_nowarn nash(payoffs_nasty; stop_iters=500, stop_lambda=1e6, stop_eps=1e-6)
+        _, status_nasty = @test_nowarn solve(payoffs_nasty; stop_iters=500, stop_lambda=1e6, stop_eps=1e-6)
         if !status_nasty.stall
             continue
         end
         # Found a stalling game
         payoffs_scaled = matrix_rescale.(payoffs_nasty)
-        _, status_scaled = nash(payoffs_scaled; stop_iters=500, stop_lambda=1e6, stop_eps=1e-6)
+        _, status_scaled = solve(payoffs_scaled; stop_iters=500, stop_lambda=1e6, stop_eps=1e-6)
         @test !status_scaled.stall
         return
     end

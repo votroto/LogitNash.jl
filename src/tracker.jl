@@ -1,7 +1,5 @@
 using LinearAlgebra
 using LinearAlgebra: BlasInt
-using LinearAlgebra.BLAS: @blasfunc
-using LinearAlgebra.LAPACK: liblapack
 
 @enum StepStatus begin
     STATUS_SUCCESS
@@ -9,33 +7,6 @@ using LinearAlgebra.LAPACK: liblapack
     STATUS_SINGULAR
     STATUS_LARGE_DISTANCE
     STATUS_JUMP
-end
-
-function validate_game(utils::NTuple{N,Array{R}}) where {N,R}
-    if N <= 1
-        throw(ArgumentError("A normal-form game must have at least 2 players; got N = $N."))
-    end
-    if any(isempty, utils)
-        throw(ArgumentError("Utility matrices cannot be empty."))
-    end
-    if !allequal(size, utils)
-        throw(DimensionMismatch("All utility matrices must have matching sizes. Received sizes: $(map(size, utils))"))
-    end
-    for U in utils
-        for u in U
-            if !isfinite(u)
-                throw(ArgumentError("Utility matrices contain Infs or NaNs"))
-            end
-        end
-    end
-    if Base.promote_op(*, R, Float64) != Float64
-        @warn "Precision may be lost. $R does not promote to Float64."
-    end
-    return true
-end
-
-function max_deviation_incentive(ubar::NTuple{N}, pi::NTuple{N}) where N
-    sum(maximum(ubar[p]) - dot(ubar[p], pi[p]) for p in 1:N)
 end
 
 function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {N}
@@ -54,41 +25,12 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
 
     rhs_aug = Vector{Float64}(undef, n + 1)
 
-    xpred = Vector{Float64}(undef, n)
-    x_diff = Vector{Float64}(undef, n)
-    dx_step = Vector{Float64}(undef, n)
+    x_pred = Vector{Float64}(undef, n)
     x_nxt = Vector{Float64}(undef, n)
 
     det_sign = Float64[1.0]
 
-    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, xpred, x_diff, dx_step, x_nxt, det_sign)
-end
-
-function lu_det_sign_rcond_heur(A::Matrix{Float64}, ipiv::Vector{BlasInt})
-    s = 1.0
-    min_d = Inf
-    max_d = 0.0
-    @inbounds for i in axes(A, 1)
-        val = A[i, i]
-        if val < 0.0
-            s = -s
-        end
-        if ipiv[i] != i
-            s = -s
-        end
-
-        abs_val = abs(val)
-        min_d = min(min_d, abs_val)
-        max_d = max(max_d, abs_val)
-    end
-    # Add a tiny epsilon to prevent divide-by-zero
-    rcond = min_d / (max_d + 1e-18)
-    return (rcond >= 1e-5) ? s : 0.0
-end
-
-function fast_lu!(A::Matrix{Float64}, ipiv::Vector{BlasInt})
-    A, ipiv, info = LinearAlgebra.LAPACK.getrf!(A, ipiv)
-    return info
+    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, x_pred, x_nxt, det_sign)
 end
 
 function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{Float64}, dt::Float64, utils::NTuple{N}, ws) where {N}
@@ -101,7 +43,7 @@ function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{F
     lambda = expm1(t)
 
     jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, utils)
-    jacobian_t!(ws.Ft, ws.ubar, mu, utils, lambda)
+    jacobian_t!(ws.Ft, ws.ubar, mu, lambda)
 
     @inbounds for j in eachindex(dx)
         ws.J_aug[end, j] = dx[j]
@@ -156,10 +98,12 @@ function correct!(
 
         lambda = expm1(t_nxt)
 
-        residual!(ws.res, mu, ws.ubar, lambda, utils)
+        residual!(ws.res, ws.ubar, mu, lambda)
 
-        @. ws.x_diff = x_nxt - x_pred
-        r_con = dot(ws.x_diff, dx) + (t_nxt - t_pred) * dt
+        r_con = (t_nxt - t_pred) * dt
+        @inbounds @simd for j in eachindex(dx)
+            r_con += (x_nxt[j] - x_pred[j]) * dx[j]
+        end
 
         if dot(ws.res, ws.res) + r_con^2 < abs_tol^2
             return STATUS_SUCCESS, x_nxt, t_nxt
@@ -170,7 +114,7 @@ function correct!(
         end
 
         jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, utils)
-        jacobian_t!(ws.Ft, ws.ubar, mu, utils, lambda)
+        jacobian_t!(ws.Ft, ws.ubar, mu, lambda)
 
         @inbounds for j in eachindex(dx)
             ws.J_aug[end, j] = dx[j]
@@ -193,15 +137,15 @@ function correct!(
         dt_step = ws.rhs_aug[end]
         step_norm_sq = dt_step^2
 
-        @inbounds for j in eachindex(ws.dx_step)
-            ws.dx_step[j] = ws.rhs_aug[j]
-            step_norm_sq += ws.dx_step[j]^2
+        @inbounds @simd for j in eachindex(x_nxt)
+            step_j = ws.rhs_aug[j]
+            step_norm_sq += step_j^2
+            x_nxt[j] += step_j
         end
 
         step_norm = sqrt(step_norm_sq)
         val_norm = sqrt(dot(x_nxt, x_nxt) + t_nxt^2)
 
-        @. x_nxt += ws.dx_step
         t_nxt += dt_step
 
         # Catch wildly diverging Newton steps before they corrupt the Jacobian with Infs.
@@ -254,20 +198,28 @@ function validate_step!(
 end
 
 """
-    nash(utils::NTuple{N,AbstractArray{Float64,N}}; stop_iters::Int=1000, stop_lambda::Float64=1e6, stop_eps::Float64=1e-6) where {N}
+    solve(utils::NTuple{N,Array{F,N}}; stop_iters::Int=1000, stop_lambda::Float64=1e6, stop_eps::Float64=1e-6)
+
+Approximates a specific mixed Nash equilibrium of a multiplayer general-sum game up to a desired precision by tracing the principal logit equilibrium branch parametrized by λ.
+
+    πₚ ∝ [ exp(λ Uₚᵃ(π₋ₚ)) ]ₐ
+
+The algorithm stops when either:
+ - (ϵ-NE condition) there is no unilateral deviation from π more profitable than `stop_eps`,
+ - (logit condition) a solution is found for the precision parameter `lambda` greater or equal to `stop_lambda`,
+ - or the maximum number of iterations of `stop_iters` is reached.
 """
-function nash(
+function solve(
     utils::NTuple{N,Array{F,N}};
     stop_iters::Int=1000,
     stop_lambda::Float64=1e6,
     stop_eps::Float64=1e-6
 ) where {N, F<:Real}
     validate_game(utils)
+    stop_t = log1p(stop_lambda)
 
     x = uniform_xprofile(utils)
-
     t = 0.0
-    stop_t = log1p(stop_lambda)
 
     dx = zero(x)
     dt = 1.0
@@ -281,10 +233,10 @@ function nash(
     stall = false
     while t <= stop_t && iteration <= stop_iters && !stall && t > -10.0
         update_predictor_jacobian!(x, t, dx, dt, utils, ws)
+        _regret = max_deviation_incentive(ws.ubar, ws.pi)
 
-        regret = max_deviation_incentive(ws.ubar, ws.pi)
-
-        if regret <= stop_eps
+        if _regret <= stop_eps
+            regret = _regret
             break
         end
 
@@ -297,12 +249,12 @@ function nash(
         end
 
         while true
-            xpred, t_pred = predict_step!(ws.xpred, x, t, dx, dt, ds)
+            x_pred, t_pred = predict_step!(ws.x_pred, x, t, dx, dt, ds)
 
-            corr_status, x_nxt, t_nxt = correct!(ws.x_nxt, xpred, t_pred, dx, dt, utils, ws)
-            val_status = validate_step!(corr_status, x_nxt, t_nxt, xpred, t_pred, ds, ws)
+            st_cor, x_nxt, t_nxt = correct!(ws.x_nxt, x_pred, t_pred, dx, dt, utils, ws)
+            st_val = validate_step!(st_cor, x_nxt, t_nxt, x_pred, t_pred, ds, ws)
 
-            if val_status == STATUS_SUCCESS
+            if st_val == STATUS_SUCCESS
                 copyto!(x, x_nxt)
                 t = t_nxt
                 break
@@ -324,8 +276,10 @@ function nash(
         iteration += 1
     end
 
-    update_predictor_jacobian!(x, t, dx, dt, utils, ws)
-    regret = max_deviation_incentive(ws.ubar, ws.pi)
+    if isnan(regret)
+        update_predictor_jacobian!(x, t, dx, dt, utils, ws)
+        regret = max_deviation_incentive(ws.ubar, ws.pi)
+    end
 
     return ws.pi, (; lambda=expm1(t), iteration, regret, stall)
 end

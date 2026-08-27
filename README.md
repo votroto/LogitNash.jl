@@ -40,7 +40,7 @@ u2 = Float64[3 5; 1 2;;; 1 2; 0 1]
 u3 = Float64[3 1; 1 0;;; 5 2; 2 1]
 three_prisoners = (u1, u2, u3)
 
-pi, status = nash(three_prisoners; stop_iters=1000, stop_lambda=1e6, stop_eps=1e-6)
+pi, status = solve(three_prisoners; stop_iters=1000, stop_lambda=1e6, stop_eps=1e-6)
 
 for p in eachindex(pi)
     println("pi_$p = ", round.(pi[p]; digits=5))

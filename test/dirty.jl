@@ -47,7 +47,7 @@ A = 5
 D = 5
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
-pi,status = nash(Us)
+pi,status = solve(Us)
 
 
 Random.seed!(3462345634)
@@ -57,7 +57,7 @@ A = 5
 D = 5
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
-@time pi,status = nash(Us)
+@time pi,status = solve(Us)
 
 print_strats(pi)
 @show status

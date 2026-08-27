@@ -115,9 +115,9 @@ end
     end
 end
 
-function jacobian_t!(J, ubar, mu, u, lambda)
+function jacobian_t!(J, ubar, mu, lambda)
     idx = 1
-    @inbounds for p in eachindex(u)
+    @inbounds for p in eachindex(mu)
         for a in eachindex(mu[p])
             J[idx] = (1.0 + lambda) * (ubar[p][end] - ubar[p][a])
             idx += 1
@@ -126,9 +126,9 @@ function jacobian_t!(J, ubar, mu, u, lambda)
     J
 end
 
-function residual!(out, mu, ubar, lambda, u)
+function residual!(out, ubar, mu, lambda)
     idx = 1
-    @inbounds for p in eachindex(u)
+    @inbounds for p in eachindex(mu)
         for a in eachindex(mu[p])
             out[idx] = mu[p][a] - lambda*(ubar[p][a] - ubar[p][end])
             idx += 1
@@ -224,10 +224,4 @@ function jacobian_x!(J, pi, lambda, dudpi, u::NTuple{N}) where {N}
     end
 
     return J
-end
-
-
-function uniform_xprofile(Us)
-    nx = sum(size(Us[i], i) - 1 for i in eachindex(Us))
-    zeros(nx)
 end

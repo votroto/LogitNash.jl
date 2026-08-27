@@ -5,11 +5,9 @@ using Test
 using LogitNash
 using LinearAlgebra
 
-# TODO: Add test to guarantee no debuging output forgotten on main!
-# Simple games should return with empty stdout and stderr.
-# (empty log with @info... too?)
-
-include("api.jl")
+@testset "Basics" begin
+    include("api.jl")
+end
 
 @testset "Unit tests" begin
     include("encoding.jl")
@@ -17,6 +15,8 @@ include("api.jl")
 end
 
 @testset "E2E game solving" begin
-    include("e2e.jl")
+    @test_nowarn redirect_stdout(stderr) do
+        include("e2e.jl")
+    end
     include("nasty_games.jl")
 end

@@ -1,5 +1,3 @@
-
-
 function fd_jacobian(f, _x; h = 1e-6)
     x = copy(_x)
     fx = f(x)
@@ -43,6 +41,7 @@ function fast_lu_nonsingular()
 end
 
 function residual_wrapper(x, t, utils::NTuple{N}) where {N}
+    lambda = expm1(t)
     rsize = sum(size(first(utils), i) - 1 for i in eachindex(utils))
 
     pi = ntuple(i -> Vector{Float64}(undef, size(utils[i], i)), Val(N))
@@ -56,13 +55,14 @@ function residual_wrapper(x, t, utils::NTuple{N}) where {N}
     LogitNash.unilateral_derivatives!(wsdudpi, utils, pi)
     LogitNash.unilateral_deviations_from_derivatives!(ubar, wsdudpi, pi)
 
-    LogitNash.residual!(res, mu, ubar, t, utils)
+    LogitNash.residual!(res, ubar, mu, lambda)
 end
 
 function jacobian_x_analytic_vs_finitedifference()
     utils = (randn(2,3,4), randn(2,3,4), randn(2,3,4))
 
-    t = rand()*100
+    lambda = rand()*100
+    t = log1p(lambda)
 
     _pi = ntuple(i->normalize(rand(size(utils[i], i)),1), 3)
     x = vcat(prob_to_redlograt.(_pi)...)
@@ -71,7 +71,7 @@ function jacobian_x_analytic_vs_finitedifference()
     wsFx = zeros(length(x), length(x))
 
     LogitNash.unilateral_derivatives!(wsdudpi, utils, _pi)
-    LogitNash.jacobian_x!(wsFx, _pi, t, wsdudpi, utils)
+    LogitNash.jacobian_x!(wsFx, _pi, lambda, wsdudpi, utils)
 
     Fx_fd = fd_jacobian(x -> residual_wrapper(x, t, utils), x)
 
@@ -81,7 +81,8 @@ end
 function jacobian_t_analytic_vs_finitedifference()
     utils = (randn(2,3,4), randn(2,3,4), randn(2,3,4))
 
-    t = rand()*100
+    lambda = rand()*100
+    t = log1p(lambda)
 
     _pi = ntuple(i->normalize(rand(size(utils[i], i)),1), 3)
     x = vcat(prob_to_redlograt.(_pi)...)
@@ -96,7 +97,7 @@ function jacobian_t_analytic_vs_finitedifference()
     LogitNash.unilateral_derivatives!(wsdudpi, utils, _pi)
     LogitNash.unilateral_deviations_from_derivatives!(wsubar, wsdudpi, _pi)
 
-    LogitNash.jacobian_t!(wsFt, wsubar, mu, utils, 0.0)
+    LogitNash.jacobian_t!(wsFt, wsubar, mu, lambda)
 
     Ft_fd = fd_jacobian(t -> residual_wrapper(x, only(t), utils), [t])
 

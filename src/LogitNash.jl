@@ -1,7 +1,9 @@
 module LogitNash
-include("spaces.jl")
-include("turocy.jl")
-include("path.jl")
 
-export nash
+include("utils.jl")
+include("kernels.jl")
+include("tracker.jl")
+
+export solve
+
 end

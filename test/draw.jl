@@ -1,6 +1,6 @@
-include("../src/spaces.jl")
-include("../src/turocy.jl")
-include("../src/path.jl")
+include("../src/utils.jl")
+include("../src/kernels.jl")
+include("../src/tracker.jl")
 include("../benchmark/parse_nfg.jl")
 
 using Random
