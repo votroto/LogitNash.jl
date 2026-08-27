@@ -56,7 +56,7 @@ function residual_wrapper(x, t, utils::NTuple{N}) where {N}
     LogitNash.unilateral_derivatives!(wsdudpi, utils, pi)
     LogitNash.unilateral_deviations_from_derivatives!(ubar, wsdudpi, pi)
 
-    LogitNash.residual!(res, mu, ubar, x, t, utils)
+    LogitNash.residual!(res, mu, ubar, t, utils)
 end
 
 function jacobian_x_analytic_vs_finitedifference()

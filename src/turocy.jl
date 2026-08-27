@@ -115,19 +115,18 @@ end
     end
 end
 
-# Scaled the parameter column from Ft to Fλ for the log . + 1
-function jacobian_t!(J, ubar, mu, u, fac)
+function jacobian_t!(J, ubar, mu, u, lambda)
     idx = 1
     @inbounds for p in eachindex(u)
         for a in eachindex(mu[p])
-            J[idx] = (1.0 + fac) * (ubar[p][end] - ubar[p][a])
+            J[idx] = (1.0 + lambda) * (ubar[p][end] - ubar[p][a])
             idx += 1
         end
     end
     J
 end
 
-function residual!(out, mu, ubar, x, lambda, u)
+function residual!(out, mu, ubar, lambda, u)
     idx = 1
     @inbounds for p in eachindex(u)
         for a in eachindex(mu[p])
@@ -140,7 +139,7 @@ end
 
 # TODO: fix this ugly nonsense!
 
-function jacobian_x!(J, pi, lam, dudpi, u::NTuple{N}) where {N}
+function jacobian_x!(J, pi, lambda, dudpi, u::NTuple{N}) where {N}
     eq_start = 1
 
     @inbounds for eq_p in 1:N
@@ -193,7 +192,7 @@ function jacobian_x!(J, pi, lam, dudpi, u::NTuple{N}) where {N}
                 # Populate columns 2 through A_pd, reading `c` from our buffer column
                 for pd_a in 2:A_pd
                     J_col = pd_start + pd_a - 1
-                    p_val_lam = -lam * pi_pd[pd_a]
+                    p_val_lam = -lambda * pi_pd[pd_a]
                     d_end = d[num_actions_eq, pd_a]
 
                     @simd ivdep for eq_a in 1:A_eq
@@ -206,7 +205,7 @@ function jacobian_x!(J, pi, lam, dudpi, u::NTuple{N}) where {N}
                 end
 
                 # Finally, compute column 1, safely overwriting our buffer with the real answer!
-                p_val_lam_1 = -lam * pi_pd[1]
+                p_val_lam_1 = -lambda * pi_pd[1]
                 d_end_1 = d[num_actions_eq, 1]
 
                 @simd ivdep for eq_a in 1:A_eq

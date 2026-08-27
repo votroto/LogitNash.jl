@@ -58,5 +58,6 @@ D = 5
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
 @time pi,status = nash(Us)
+
 print_strats(pi)
 @show status
