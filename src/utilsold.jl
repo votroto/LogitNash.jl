@@ -29,12 +29,12 @@ function splitviews(x::AbstractVector, js::NTuple{N,Int}) where {N}
     ntuple(i -> @view(x[(offs[i]+1):offs[i+1]]), N)
 end
 
-function redlograt_to_prob!(y::AbstractVector{F}, x::AbstractVector{F}, ref::Int) where F
+function redlograt_to_prob!(y::AbstractVector{F}, x::AbstractVector{F}, active::Vector{Int}, ref::Int) where F
     c = maximum(x, init=zero(F))
     denom = zero(F)
 
     @inbounds for i in eachindex(x)
-        a = i + (i >= ref)
+        a = active[i]
         v = exp(x[i] - c)
         y[a] = v
         denom += v

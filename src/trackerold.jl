@@ -1,6 +1,5 @@
 using LinearAlgebra
 using LinearAlgebra: BlasInt
-using Printf
 
 @enum StepStatus begin
     STATUS_SUCCESS
@@ -31,59 +30,50 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
 
     det_sign = Float64[1.0]
 
-    # --- UPDATED: Track only refs, initialize to the last action ---
+    # --- NEW: Tracking structures for pivoting ---
     refs = Int[dims[i] for i in 1:N]
+    active_actions = [collect(1:(dims[i]-1)) for i in 1:N]
 
-    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, x_pred, x_nxt, det_sign, refs)
-end
-
-function shift_and_insert!(v::AbstractVector, src::Int, dest::Int, val)
-    if src < dest
-        # Shift elements left to close the gap
-        @inbounds for i in src:(dest - 1)
-            v[i] = v[i + 1]
-        end
-    elseif src > dest
-        # Shift elements right to close the gap
-        @inbounds for i in src:-1:(dest + 1)
-            v[i] = v[i - 1]
-        end
+    offsets = zeros(Int, N)
+    cur = 0
+    for i in 1:N
+        offsets[i] = cur
+        cur += dims[i] - 1
     end
-    @inbounds v[dest] = val
-    return v
+
+    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, x_pred, x_nxt, det_sign, refs, active_actions, offsets)
 end
 
-function pivot_reference!(x_p::AbstractVector{Float64}, dx_p::AbstractVector{Float64}, dx_old_p::AbstractVector{Float64}, p::Int, new_ref_idx::Int, ws)
+function pivot_reference!(x::Vector{Float64}, dx::Vector{Float64}, dx_old::Vector{Float64}, p::Int, new_ref_idx::Int, ws)
+    offset = ws.offsets[p]
     old_ref = ws.refs[p]
-    new_ref = new_ref_idx + (new_ref_idx >= old_ref)
+    new_ref = ws.active_actions[p][new_ref_idx]
 
-    val_x = x_p[new_ref_idx]
-    val_dx = dx_p[new_ref_idx]
-    val_dx_old = dx_old_p[new_ref_idx]
+    val_x = x[offset+new_ref_idx]
+    val_dx = dx[offset+new_ref_idx]
+    val_dx_old = dx_old[offset+new_ref_idx]
 
-    # 1. Shift relative to the new reference
-    @inbounds @simd for i in eachindex(x_p)
-        x_p[i] -= val_x
-        dx_p[i] -= val_dx
-        dx_old_p[i] -= val_dx_old
+    @inbounds for i in 1:length(ws.active_actions[p])
+        idx = offset + i
+        x[idx] -= val_x
+        dx[idx] -= val_dx
+        dx_old[idx] -= val_dx_old
     end
 
-    # 2. Determine where the old reference lands in the reduced array
-    dest_idx = new_ref < old_ref ? (old_ref - 1) : old_ref
+    x[offset+new_ref_idx] = -val_x
+    dx[offset+new_ref_idx] = -val_dx
+    dx_old[offset+new_ref_idx] = -val_dx_old
 
-    # 3. Shift elements and insert the old reference (negated)
-    shift_and_insert!(x_p, new_ref_idx, dest_idx, -val_x)
-    shift_and_insert!(dx_p, new_ref_idx, dest_idx, -val_dx)
-    shift_and_insert!(dx_old_p, new_ref_idx, dest_idx, -val_dx_old)
-
+    ws.active_actions[p][new_ref_idx] = old_ref
     ws.refs[p] = new_ref
 end
 
 function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{Float64}, dt::Float64, utils::NTuple{N}, ws) where {N}
     mu = splitviews(x, size(first(utils)) .- 1)
 
+    # --- UPDATED: Pass active actions and ref ---
     for p in 1:N
-        redlograt_to_prob!(ws.pi[p], mu[p], ws.refs[p])
+        redlograt_to_prob!(ws.pi[p], mu[p], ws.active_actions[p], ws.refs[p])
     end
 
     unilateral_derivatives!(ws.dudpi, utils, ws.pi)
@@ -91,8 +81,9 @@ function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{F
 
     lambda = expm1(t)
 
-    jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, utils, ws.refs)
-    jacobian_t!(ws.Ft, ws.ubar, mu, lambda, ws.refs)
+    # --- UPDATED: Pass active actions and ref ---
+    jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, utils, ws.active_actions, ws.refs)
+    jacobian_t!(ws.Ft, ws.ubar, mu, lambda, ws.active_actions, ws.refs)
 
     @inbounds for j in eachindex(dx)
         ws.J_aug[end, j] = dx[j]
@@ -158,7 +149,7 @@ function correct!(
     for i in 0:max_iters
         mu = splitviews(x_nxt, size(first(utils)) .- 1)
         for p in 1:N
-            redlograt_to_prob!(ws.pi[p], mu[p], ws.refs[p])
+            redlograt_to_prob!(ws.pi[p], mu[p], ws.active_actions[p], ws.refs[p])
         end
 
         unilateral_derivatives!(ws.dudpi, utils, ws.pi)
@@ -166,7 +157,7 @@ function correct!(
 
         lambda = expm1(t_nxt)
 
-        residual!(ws.res, ws.ubar, mu, lambda, ws.refs)
+        residual!(ws.res, ws.ubar, mu, lambda, ws.active_actions, ws.refs)
 
         r_con = (t_nxt - t_pred) * dt
         @inbounds @simd for j in eachindex(dx)
@@ -181,8 +172,8 @@ function correct!(
             return STATUS_MAX_ITERS, x_nxt, t_nxt
         end
 
-        jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, utils, ws.refs)
-        jacobian_t!(ws.Ft, ws.ubar, mu, lambda, ws.refs)
+        jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, utils, ws.active_actions, ws.refs)
+        jacobian_t!(ws.Ft, ws.ubar, mu, lambda, ws.active_actions, ws.refs)
 
         @inbounds for j in eachindex(dx)
             ws.J_aug[end, j] = dx[j]
@@ -216,6 +207,7 @@ function correct!(
 
         t_nxt += dt_step
 
+        # Catch wildly diverging Newton steps before they corrupt the Jacobian with Infs.
         if !isfinite(t_nxt) || t_nxt > 50.0 || t_nxt < -20.0 || any(!isfinite, x_nxt)
             return STATUS_LARGE_DISTANCE, x_nxt, t_nxt
         end
@@ -246,6 +238,11 @@ function validate_step!(
         dist_sq += (x_next[j] - x_pred[j])^2
     end
 
+    if dist_sq > (1.0 * ds)^2
+        #    return STATUS_LARGE_DISTANCE
+    end
+
+    # lu determinant, but if a rcond heuristic is below 1e-5, it will return 0 to disable the check
     cur_det_sign = lu_det_sign_rcond_heur(ws.J_aug, ws.ipiv)
     if ws.det_sign[1] == 0.0 || cur_det_sign == 0.0
         ws.det_sign[1] = cur_det_sign
@@ -261,10 +258,10 @@ function validate_step!(
 end
 
 
+using Printf
 function strat_format(xs)
     join([@sprintf("%.5e ", w) for w in xs])
 end
-
 function solve(
     utils::NTuple{N,Array{F,N}};
     stop_iters::Int=1000,
@@ -281,6 +278,7 @@ function solve(
     dt = 1.0
     ds = 0.01
 
+    # Add tracking variables for curvature predictor
     dx_old = copy(dx)
     dt_old = dt
     ds_old = 0.0
@@ -304,11 +302,13 @@ function solve(
 
         mu = splitviews(x, size(first(utils)) .- 1)
         for p in 1:N
-            redlograt_to_prob!(ws.pi[p], mu[p], ws.refs[p])
+            redlograt_to_prob!(ws.pi[p], mu[p], ws.active_actions[p], ws.refs[p])
         end
 
-    #    println(strat_format(x), @sprintf(" %.5f", expm1(t)))
+      #  println(strat_format(x), @sprintf(" %.5f", expm1(t)))
 
+        # Prevent exponential runaway that causes Float64 Inf,
+        # and avoid massively overshooting the stop condition.
         if t + ds * dt > stop_t + 2.0
             ds = (stop_t + 2.0 - t) / dt
         end
@@ -326,19 +326,15 @@ function solve(
                 dt_old = dt
                 ds_old = ds
 
-                mu_x = splitviews(x, size(first(utils)) .- 1)
-                mu_dx = splitviews(dx, size(first(utils)) .- 1)
-                mu_dx_old = splitviews(dx_old, size(first(utils)) .- 1)
-
+                # --- NEW: Dynamic pivot check block ---
                 for p in 1:N
                     best_a = argmax(ws.pi[p])
                     if best_a != ws.refs[p]
-                        # Branchless mapping backward:
-                        # To find the reduced index from the true index
-                        idx = best_a - (best_a > ws.refs[p])
-                        pivot_reference!(mu_x[p], mu_dx[p], mu_dx_old[p], p, idx, ws)
+                        idx = findfirst(==(best_a), ws.active_actions[p])
+                        pivot_reference!(x, dx, dx_old, p, idx, ws)
                     end
                 end
+                # --------------------------------------
 
                 break
             else

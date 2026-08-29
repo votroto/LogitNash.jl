@@ -115,14 +115,13 @@ end
     end
 end
 
-
-function residual!(out, ubar, mu, lambda, refs)
+function residual!(out, ubar, mu, lambda, active_actions, refs)
     idx = 1
     @inbounds for p in eachindex(mu)
         ref_a = refs[p]
+        active = active_actions[p]
         for i in eachindex(mu[p])
-            # Branchless: action index leaps over the reference action
-            a = i + (i >= ref_a)
+            a = active[i]
             out[idx] = mu[p][i] - lambda*(ubar[p][a] - ubar[p][ref_a])
             idx += 1
         end
@@ -130,12 +129,13 @@ function residual!(out, ubar, mu, lambda, refs)
     out
 end
 
-function jacobian_t!(J, ubar, mu, lambda, refs)
+function jacobian_t!(J, ubar, mu, lambda, active_actions, refs)
     idx = 1
     @inbounds for p in eachindex(mu)
         ref_a = refs[p]
+        active = active_actions[p]
         for i in eachindex(mu[p])
-            a = i + (i >= ref_a)
+            a = active[i]
             J[idx] = (1.0 + lambda) * (ubar[p][ref_a] - ubar[p][a])
             idx += 1
         end
@@ -143,20 +143,27 @@ function jacobian_t!(J, ubar, mu, lambda, refs)
     J
 end
 
-function jacobian_x!(J, pi, lambda, dudpi, u::NTuple{N}, refs) where {N}
+# TODO: fix this ugly nonsense!
+function jacobian_x!(J, pi, lambda, dudpi, u::NTuple{N}, active_actions, refs) where {N}
     eq_start = 1
 
     @inbounds for eq_p in 1:N
-        A_eq = length(pi[eq_p]) - 1
+        A_eq = length(active_actions[eq_p])
+        A_eq == 0 && continue
+
         eq_ref = refs[eq_p]
+        eq_active = active_actions[eq_p]
 
         pd_start = 1
         for pd_p in 1:N
-            A_pd = length(pi[pd_p]) - 1
+            A_pd = length(active_actions[pd_p])
+            A_pd == 0 && continue
+
             pd_ref = refs[pd_p]
+            pd_active = active_actions[pd_p]
 
             if pd_p == eq_p
-                # 1. Own-player identity block
+                # 1. Own-player identity block (Perfectly Column-Major)
                 for pd_idx in 1:A_pd
                     J_col = pd_start + pd_idx - 1
                     @simd ivdep for eq_idx in 1:A_eq
@@ -169,31 +176,34 @@ function jacobian_x!(J, pi, lambda, dudpi, u::NTuple{N}, refs) where {N}
                 pi_pd = pi[pd_p]
                 num_actions_pd = length(pi_pd)
 
+                # --- ZERO ALLOCATION TRICK ---
                 J_col_buf = pd_start
 
                 for eq_idx in 1:A_eq
                     J[eq_start+eq_idx-1, J_col_buf] = zero(eltype(J))
                 end
 
+                # Accumulate `c` across all opponent actions into our hijacked column
                 for pd_a in 1:num_actions_pd
                     p_val = pi_pd[pd_a]
                     d_ref = d[eq_ref, pd_a]
 
                     @simd ivdep for eq_idx in 1:A_eq
-                        eq_a = eq_idx + (eq_idx >= eq_ref)
+                        eq_a = eq_active[eq_idx]
                         J_row = eq_start + eq_idx - 1
                         J[J_row, J_col_buf] += (d[eq_a, pd_a] - d_ref) * p_val
                     end
                 end
 
+                # --- BUILD JACOBIAN (Perfectly Column-Major) ---
                 for pd_idx in 2:A_pd
-                    pd_a = pd_idx + (pd_idx >= pd_ref)
+                    pd_a = pd_active[pd_idx]
                     J_col = pd_start + pd_idx - 1
                     p_val_lam = -lambda * pi_pd[pd_a]
                     d_ref = d[eq_ref, pd_a]
 
                     @simd ivdep for eq_idx in 1:A_eq
-                        eq_a = eq_idx + (eq_idx >= eq_ref)
+                        eq_a = eq_active[eq_idx]
                         J_row = eq_start + eq_idx - 1
                         c = J[J_row, J_col_buf]
                         gm = d[eq_a, pd_a] - d_ref
@@ -202,13 +212,13 @@ function jacobian_x!(J, pi, lambda, dudpi, u::NTuple{N}, refs) where {N}
                     end
                 end
 
-                # Recompute the first valid action
-                pd_a_1 = 1 + (1 >= pd_ref)
+                # Finally, compute column 1, safely overwriting our buffer with the real answer!
+                pd_a_1 = pd_active[1]
                 p_val_lam_1 = -lambda * pi_pd[pd_a_1]
                 d_ref_1 = d[eq_ref, pd_a_1]
 
                 @simd ivdep for eq_idx in 1:A_eq
-                    eq_a = eq_idx + (eq_idx >= eq_ref)
+                    eq_a = eq_active[eq_idx]
                     J_row = eq_start + eq_idx - 1
                     c = J[J_row, J_col_buf]
                     gm = d[eq_a, pd_a_1] - d_ref_1
@@ -216,8 +226,10 @@ function jacobian_x!(J, pi, lambda, dudpi, u::NTuple{N}, refs) where {N}
                     J[J_row, J_col_buf] = p_val_lam_1 * (gm - c)
                 end
             end
+
             pd_start += A_pd
         end
+
         eq_start += A_eq
     end
 
