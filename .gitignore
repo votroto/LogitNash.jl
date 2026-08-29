@@ -6,3 +6,5 @@ Manifest.toml
 *.pdf
 *.dat
 *.nfg
+*.tar.gz
+*.tar
