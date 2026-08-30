@@ -1,6 +1,6 @@
 function redlograt_to_prob(x::AbstractVector)
     y = similar(x, length(x)+1)
-    LogitNash.redlograt_to_prob!(y, x)
+    LogitNash.redlograt_to_prob!(y, x, length(x)+1)
 end
 
 function prob_to_redlograt(y::AbstractVector)

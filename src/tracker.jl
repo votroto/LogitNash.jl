@@ -12,10 +12,9 @@ end
 
 function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {N}
     n = length(x_template)
-    rsize = sum(dims[i] - 1 for i in 1:N)
 
     pi = ntuple(i -> Vector{Float64}(undef, dims[i]), Val(N))
-    res = Vector{Float64}(undef, rsize)
+    res = Vector{Float64}(undef, n)
     ubar = ntuple(i -> zeros(dims[i]), Val(N))
     dudpi = ntuple(p -> ntuple(q -> zeros(dims[p], dims[q]), Val(N)), Val(N))
 
@@ -31,7 +30,6 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
 
     det_sign = Float64[1.0]
 
-    # --- UPDATED: Track only refs, initialize to the last action ---
     refs = Int[dims[i] for i in 1:N]
 
     return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, x_pred, x_nxt, det_sign, refs)
@@ -40,13 +38,13 @@ end
 function shift_and_insert!(v::AbstractVector, src::Int, dest::Int, val)
     if src < dest
         # Shift elements left to close the gap
-        @inbounds for i in src:(dest - 1)
-            v[i] = v[i + 1]
+        @inbounds for i in src:(dest-1)
+            v[i] = v[i+1]
         end
     elseif src > dest
         # Shift elements right to close the gap
-        @inbounds for i in src:-1:(dest + 1)
-            v[i] = v[i - 1]
+        @inbounds for i in src:-1:(dest+1)
+            v[i] = v[i-1]
         end
     end
     @inbounds v[dest] = val
@@ -91,7 +89,7 @@ function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{F
 
     lambda = expm1(t)
 
-    jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, utils, ws.refs)
+    jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, ws.refs)
     jacobian_t!(ws.Ft, ws.ubar, mu, lambda, ws.refs)
 
     @inbounds for j in eachindex(dx)
@@ -181,7 +179,7 @@ function correct!(
             return STATUS_MAX_ITERS, x_nxt, t_nxt
         end
 
-        jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, utils, ws.refs)
+        jacobian_x!(ws.Fx, ws.pi, lambda, ws.dudpi, ws.refs)
         jacobian_t!(ws.Ft, ws.ubar, mu, lambda, ws.refs)
 
         @inbounds for j in eachindex(dx)
@@ -307,7 +305,7 @@ function solve(
             redlograt_to_prob!(ws.pi[p], mu[p], ws.refs[p])
         end
 
-    #    println(strat_format(x), @sprintf(" %.5f", expm1(t)))
+        #    println(strat_format(x), @sprintf(" %.5f", expm1(t)))
 
         if t + ds * dt > stop_t + 2.0
             ds = (stop_t + 2.0 - t) / dt

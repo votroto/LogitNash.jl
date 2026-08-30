@@ -115,7 +115,6 @@ end
     end
 end
 
-
 function residual!(out, ubar, mu, lambda, refs)
     idx = 1
     @inbounds for p in eachindex(mu)
@@ -143,82 +142,69 @@ function jacobian_t!(J, ubar, mu, lambda, refs)
     J
 end
 
-function jacobian_x!(J, pi, lambda, dudpi, u::NTuple{N}, refs) where {N}
+function set_I_block!(J::AbstractMatrix{T}) where {T}
+    @inbounds for j in axes(J, 1)
+        @simd ivdep for i in axes(J, 2)
+            J[i, j] = ifelse(i == j, one(T), zero(T))
+        end
+    end
+    return J
+end
+
+function set_pq_block!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs, p, q) where {N,T}
+    dudpi_pq = dudpi[p][q]
+    Rp = refs[p]
+    Rq = refs[q]
+
+    # Precalculate RHS sum into the FIRST column.
+    @inbounds for _i in axes(J, 1)
+        i = _i + (_i >= Rp)
+
+        rhs_val = zero(T)
+        @simd ivdep for k in axes(dudpi_pq, 2)
+            rhs_val += (dudpi_pq[i, k] - dudpi_pq[Rp, k]) * pi[q][k]
+        end
+        J[_i, 1] = rhs_val
+    end
+
+    @inbounds for _j in size(J, 2):-1:1
+        j = _j + (_j >= Rq)
+        lam_pi_q = -lambda * pi[q][j]
+
+        @simd ivdep for _i in axes(J, 1)
+            i = _i + (_i >= Rp)
+
+            lhs = dudpi_pq[i, j] - dudpi_pq[Rp, j]
+            rhs = J[_i, 1]
+
+            J[_i, _j] = lam_pi_q * (lhs - rhs)
+        end
+    end
+
+    return J
+end
+
+function jacobian_x!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs) where {N,T}
     eq_start = 1
 
-    @inbounds for eq_p in 1:N
-        A_eq = length(pi[eq_p]) - 1
-        eq_ref = refs[eq_p]
+    @inbounds for p in 1:N
+        Dp = length(pi[p]) - 1
 
         pd_start = 1
-        for pd_p in 1:N
-            A_pd = length(pi[pd_p]) - 1
-            pd_ref = refs[pd_p]
+        for q in 1:N
+            Dq = length(pi[q]) - 1
 
-            if pd_p == eq_p
-                # 1. Own-player identity block
-                for pd_idx in 1:A_pd
-                    J_col = pd_start + pd_idx - 1
-                    @simd ivdep for eq_idx in 1:A_eq
-                        J_row = eq_start + eq_idx - 1
-                        J[J_row, J_col] = ifelse(eq_idx == pd_idx, one(eltype(J)), zero(eltype(J)))
-                    end
-                end
+            pq_block = @view J[eq_start:(eq_start+Dp-1), pd_start:(pd_start+Dq-1)]
+
+            if q == p
+                set_I_block!(pq_block)
             else
-                d = dudpi[eq_p][pd_p]
-                pi_pd = pi[pd_p]
-                num_actions_pd = length(pi_pd)
-
-                J_col_buf = pd_start
-
-                for eq_idx in 1:A_eq
-                    J[eq_start+eq_idx-1, J_col_buf] = zero(eltype(J))
-                end
-
-                for pd_a in 1:num_actions_pd
-                    p_val = pi_pd[pd_a]
-                    d_ref = d[eq_ref, pd_a]
-
-                    @simd ivdep for eq_idx in 1:A_eq
-                        eq_a = eq_idx + (eq_idx >= eq_ref)
-                        J_row = eq_start + eq_idx - 1
-                        J[J_row, J_col_buf] += (d[eq_a, pd_a] - d_ref) * p_val
-                    end
-                end
-
-                for pd_idx in 2:A_pd
-                    pd_a = pd_idx + (pd_idx >= pd_ref)
-                    J_col = pd_start + pd_idx - 1
-                    p_val_lam = -lambda * pi_pd[pd_a]
-                    d_ref = d[eq_ref, pd_a]
-
-                    @simd ivdep for eq_idx in 1:A_eq
-                        eq_a = eq_idx + (eq_idx >= eq_ref)
-                        J_row = eq_start + eq_idx - 1
-                        c = J[J_row, J_col_buf]
-                        gm = d[eq_a, pd_a] - d_ref
-
-                        J[J_row, J_col] = p_val_lam * (gm - c)
-                    end
-                end
-
-                # Recompute the first valid action
-                pd_a_1 = 1 + (1 >= pd_ref)
-                p_val_lam_1 = -lambda * pi_pd[pd_a_1]
-                d_ref_1 = d[eq_ref, pd_a_1]
-
-                @simd ivdep for eq_idx in 1:A_eq
-                    eq_a = eq_idx + (eq_idx >= eq_ref)
-                    J_row = eq_start + eq_idx - 1
-                    c = J[J_row, J_col_buf]
-                    gm = d[eq_a, pd_a_1] - d_ref_1
-
-                    J[J_row, J_col_buf] = p_val_lam_1 * (gm - c)
-                end
+                set_pq_block!(pq_block, pi, lambda, dudpi, refs, p, q)
             end
-            pd_start += A_pd
+
+            pd_start += Dq
         end
-        eq_start += A_eq
+        eq_start += Dp
     end
 
     return J
