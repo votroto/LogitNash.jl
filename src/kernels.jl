@@ -142,16 +142,15 @@ function jacobian_t!(J, ubar, mu, lambda, refs)
     J
 end
 
-function set_I_block!(J::AbstractMatrix{T}) where {T}
+function _set_I_block!(J::AbstractMatrix{T}) where {T}
     @inbounds for j in axes(J, 1)
         @simd ivdep for i in axes(J, 2)
             J[i, j] = ifelse(i == j, one(T), zero(T))
         end
     end
-    return J
 end
 
-function set_pq_block!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs, p, q) where {N,T}
+function _set_pq_block!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs, p, q) where {N,T}
     dudpi_pq = dudpi[p][q]
     Rp = refs[p]
     Rq = refs[q]
@@ -180,8 +179,6 @@ function set_pq_block!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs,
             J[_i, _j] = lam_pi_q * (lhs - rhs)
         end
     end
-
-    return J
 end
 
 function jacobian_x!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs) where {N,T}
@@ -197,9 +194,9 @@ function jacobian_x!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs) w
             pq_block = @view J[eq_start:(eq_start+Dp-1), pd_start:(pd_start+Dq-1)]
 
             if q == p
-                set_I_block!(pq_block)
+                _set_I_block!(pq_block)
             else
-                set_pq_block!(pq_block, pi, lambda, dudpi, refs, p, q)
+                _set_pq_block!(pq_block, pi, lambda, dudpi, refs, p, q)
             end
 
             pd_start += Dq
@@ -208,4 +205,11 @@ function jacobian_x!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs) w
     end
 
     return J
+end
+
+function jacobian_aug!(J, dx, dt)
+    @inbounds for j in eachindex(dx)
+        J[end, j] = dx[j]
+    end
+    J[end, end] = dt
 end
