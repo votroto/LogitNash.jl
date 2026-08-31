@@ -70,13 +70,15 @@ function jacobian_x_analytic_vs_finitedifference()
     x = vcat(prob_to_redlograt.(_pi)...)
 
     wsdudpi = ntuple(p -> ntuple(q -> zeros(size(utils[p], p), size(utils[p], q)), 3), 3)
+    ubar = ntuple(i -> zeros(size(utils[i], i)), 3)
     wsFx = zeros(length(x), length(x))
 
 
     refs = size(first(utils))
 
     LogitNash.unilateral_derivatives!(wsdudpi, utils, _pi)
-    LogitNash.jacobian_x!(wsFx, _pi, lambda, wsdudpi, refs)
+    LogitNash.unilateral_deviations_from_derivatives!(ubar, wsdudpi, _pi)
+    LogitNash.jacobian_x!(wsFx, _pi, lambda, wsdudpi, ubar, refs)
 
     Fx_fd = fd_jacobian(x -> residual_wrapper(x, t, utils), x)
 
@@ -97,13 +99,12 @@ function jacobian_t_analytic_vs_finitedifference()
     wsubar = ntuple(i -> zeros(size(utils[i], i)), 3)
     wsFt = Vector{Float64}(undef, rsize)
 
-    mu = LogitNash.splitviews(x, size(first(utils)) .- 1)
     refs = size(first(utils))
 
     LogitNash.unilateral_derivatives!(wsdudpi, utils, _pi)
     LogitNash.unilateral_deviations_from_derivatives!(wsubar, wsdudpi, _pi)
 
-    LogitNash.jacobian_t!(wsFt, wsubar, mu, lambda, refs)
+    LogitNash.jacobian_t!(wsFt, wsubar, lambda, refs)
 
     Ft_fd = fd_jacobian(t -> residual_wrapper(x, only(t), utils), [t])
 

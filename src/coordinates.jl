@@ -72,7 +72,6 @@ function pivot_references!(x, dx, dx_old, pi::NTuple{N}, refs) where N
     mu_dx = splitviews(dx, mu_dim)
     mu_dx_old = splitviews(dx_old, mu_dim)
 
-    # Branchless mapping backward: find the reduced index from the true index.
     for p in 1:N
         best_a = argmax(pi[p])
         if best_a != refs[p]

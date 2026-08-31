@@ -42,8 +42,8 @@ function correct!(
             return STATUS_MAX_ITERS, x_nxt, t_nxt
         end
 
-        jacobian_x!(ws.Fx, pi, lambda, ws.dudpi, ws.refs)
-        jacobian_t!(ws.Ft, ws.ubar, mu, lambda, ws.refs)
+        jacobian_x!(ws.Fx, pi, lambda, ws.dudpi, ws.ubar, ws.refs)
+        jacobian_t!(ws.Ft, ws.ubar, lambda, ws.refs)
         jacobian_aug!(ws.J_aug, dx, dt)
 
         @inbounds for j in eachindex(ws.res)

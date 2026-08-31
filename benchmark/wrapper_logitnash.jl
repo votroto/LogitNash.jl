@@ -18,7 +18,7 @@ function main(cmd, num_samples)
     for _ in 1:num_samples
         try
             data = read(cmd)
-            GC.gc()
+            GC.gc(false)
             tp, ts, err = timed_solve(data)
             @printf "%.6f %d\n" (tp.time + ts.time) err
         catch e

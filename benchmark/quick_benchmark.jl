@@ -41,7 +41,7 @@ for num_players in min_players:increment_players:max_players
         end
 
         game = randn_game(num_players, num_actions)
-        _ne, _status = LogitNash.solve(game; stop_lambda, stop_eps)
+        _ne, _status = LogitNash.solve(game; stop_lambda, stop_eps, stop_iters)
 
         total = 0.0
         sampl = 0

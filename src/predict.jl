@@ -5,8 +5,8 @@ function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{F
     unilateral_derivatives!(ws.dudpi, utils, pi)
     unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, pi)
 
-    jacobian_x!(ws.Fx, pi, lambda, ws.dudpi, ws.refs)
-    jacobian_t!(ws.Ft, ws.ubar, mu, lambda, ws.refs)
+    jacobian_x!(ws.Fx, pi, lambda, ws.dudpi, ws.ubar, ws.refs)
+    jacobian_t!(ws.Ft, ws.ubar, lambda, ws.refs)
     jacobian_aug!(ws.J_aug, dx, dt)
 
     fast_lu!(ws.J_aug, ws.ipiv)

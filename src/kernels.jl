@@ -120,7 +120,6 @@ function residual!(out, ubar, mu, lambda, refs)
     @inbounds for p in eachindex(mu)
         ref_a = refs[p]
         for i in eachindex(mu[p])
-            # Branchless: action index leaps over the reference action
             a = i + (i >= ref_a)
             out[idx] = mu[p][i] - lambda*(ubar[p][a] - ubar[p][ref_a])
             idx += 1
@@ -129,11 +128,11 @@ function residual!(out, ubar, mu, lambda, refs)
     out
 end
 
-function jacobian_t!(J, ubar, mu, lambda, refs)
+function jacobian_t!(J, ubar, lambda, refs)
     idx = 1
-    @inbounds for p in eachindex(mu)
+    @inbounds for p in eachindex(ubar)
         ref_a = refs[p]
-        for i in eachindex(mu[p])
+        for i in 1:length(ubar[p]) - 1
             a = i + (i >= ref_a)
             J[idx] = (1.0 + lambda) * (ubar[p][ref_a] - ubar[p][a])
             idx += 1
@@ -150,23 +149,12 @@ function _set_I_block!(J::AbstractMatrix{T}) where {T}
     end
 end
 
-function _set_pq_block!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs, p, q) where {N,T}
+function _set_pq_block!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, ubar, refs, p, q) where {N,T}
     dudpi_pq = dudpi[p][q]
     Rp = refs[p]
     Rq = refs[q]
 
-    # Precalculate RHS sum into the FIRST column.
-    @inbounds for _i in axes(J, 1)
-        i = _i + (_i >= Rp)
-
-        rhs_val = zero(T)
-        @simd ivdep for k in axes(dudpi_pq, 2)
-            rhs_val += (dudpi_pq[i, k] - dudpi_pq[Rp, k]) * pi[q][k]
-        end
-        J[_i, 1] = rhs_val
-    end
-
-    @inbounds for _j in size(J, 2):-1:1
+    @inbounds for _j in axes(J, 2)
         j = _j + (_j >= Rq)
         lam_pi_q = -lambda * pi[q][j]
 
@@ -174,16 +162,15 @@ function _set_pq_block!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs
             i = _i + (_i >= Rp)
 
             lhs = dudpi_pq[i, j] - dudpi_pq[Rp, j]
-            rhs = J[_i, 1]
+            rhs = ubar[p][i] - ubar[p][Rp]
 
             J[_i, _j] = lam_pi_q * (lhs - rhs)
         end
     end
 end
 
-function jacobian_x!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs) where {N,T}
+function jacobian_x!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, ubar, refs) where {N,T}
     eq_start = 1
-
     @inbounds for p in 1:N
         Dp = length(pi[p]) - 1
 
@@ -196,7 +183,7 @@ function jacobian_x!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, refs) w
             if q == p
                 _set_I_block!(pq_block)
             else
-                _set_pq_block!(pq_block, pi, lambda, dudpi, refs, p, q)
+                _set_pq_block!(pq_block, pi, lambda, dudpi, ubar, refs, p, q)
             end
 
             pd_start += Dq

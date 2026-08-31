@@ -21,10 +21,11 @@ for dataset in readdir("nfgs", join=true)
     tp, ts, err = timed_solve(data)
     tottim = 0.0
     totga = 0
+    GC.gc(false)
+
     for gamefile in readdir(dataset, join=true)
         try
             data = read(gamefile)
-            GC.gc()
             tp, ts, status = timed_solve(data)
             tottim += ts.time
             totga += 1

@@ -1,6 +1,5 @@
 using LinearAlgebra
 using LinearAlgebra: BlasInt
-using Printf
 
 function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {N}
     n = length(x_template)
