@@ -6,17 +6,17 @@ using LogitNash
 using LinearAlgebra
 
 @testset "Basics" begin
-    include("api.jl")
+    include("test_api.jl")
 end
 
 @testset "Unit tests" begin
-    include("encoding.jl")
-    include("kernels.jl")
+    include("test_encoding.jl")
+    include("test_kernels.jl")
 end
 
 @testset "E2E game solving" begin
     @test_nowarn redirect_stdout(stderr) do
-        include("e2e.jl")
+        include("test_e2e.jl")
     end
-    include("nasty_games.jl")
+    include("test_nasty_games.jl")
 end

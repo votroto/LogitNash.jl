@@ -1,11 +1,9 @@
-include("parse_nfg.jl")
-
 using LogitNash
 using Printf
 
 function timed_solve(data; stop_lambda=1e6, stop_eps=NaN)
-    t_parse = @timed tensors = parse_nfg(data)
-    t_solve = @timed ne, status = LogitNash.solve(tensors; stop_lambda, stop_eps)
+    t_parse = @timed tensors = LogitNash.parse_nfg(data)
+    t_solve = @timed ne, status = solve(tensors; stop_lambda, stop_eps)
 
     err = status.lambda < stop_lambda && status.regret > stop_eps || status.stall
     return t_parse, t_solve, err
