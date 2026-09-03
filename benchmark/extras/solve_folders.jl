@@ -42,13 +42,13 @@ function timed_solve_file(gamefile)
     end
 end
 
-function solve_datasets(root::String)
+function solve_folders(root::String)
     items = readdir(root, join=true)
     subdirs = filter(isdir, items)
     gamefiles = filter(isfile, items)
 
     for subdir in subdirs
-        solve_datasets(subdir)
+        solve_folders(subdir)
     end
 
     if isempty(gamefiles)
@@ -81,4 +81,4 @@ function solve_datasets(root::String)
     println()
 end
 
-# solve_datasets("nfgs")
+# solve_folders("nfgs")

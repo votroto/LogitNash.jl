@@ -16,11 +16,9 @@ The algorithm stops when either:
 
 ## Speed and Stability
 
-*LogitNash.jl* currently achieves a speedup of **82×** compared to *gambit-logit*! See our [Benchmarks](https://github.com/votroto/LogitNash.jl/wiki/Benchmarks) for details.
+*LogitNash.jl* can be orders of magnitude faster than *gambit-logit*! See our [Benchmarks](https://github.com/votroto/LogitNash.jl/wiki/Benchmarks) for details and the full *GAMUT*.
 
- - Measured the time to reach $\lambda = 10^6$ over 100 `random_params` samples from the six-player five-action `RandomGame` GAMUT distribution running on a single thread of Xeon Gold 6146.
-
- Not convinced? Benchmark it yourself with the prepared `/benchmark` scripts for Bash or Slurm.
+Not convinced? Benchmark it yourself with the prepared `/benchmark` scripts for Bash or Slurm.
 
 ## Install
 
