@@ -68,7 +68,7 @@ function solve(
         end
 
         while true
-            x_pred, t_pred = predict_step_quadratic!(ws.x_pred, x, t, dx, dt, dx_old, dt_old, ds, ds_old)
+            x_pred, t_pred = predict_step_quadratic!(ws.x_pred, x, t, dx, dt, ds, dx_old, dt_old, ds_old)
             st_cor, x_nxt, t_nxt = correct!(ws.x_nxt, x_pred, t_pred, dx, dt, utils, ws)
             st_val = validate_step!(st_cor, x_nxt, t_nxt, x_pred, t_pred, ds, ws)
 

@@ -1,5 +1,5 @@
 function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{Float64}, dt::Float64, utils::NTuple{N}, ws) where {N}
-    mu, pi = extract_strategy_profiles!(ws.pi, x, ws.refs)
+    _mu, pi = extract_strategy_profiles!(ws.pi, x, ws.refs)
     lambda = expm1(t)
 
     unilateral_derivatives!(ws.dudpi, utils, pi)
@@ -33,9 +33,9 @@ function predict_step_quadratic!(
     t::Float64,
     dx::Vector{Float64},
     dt::Float64,
+    ds::Float64,
     dx_old::Vector{Float64},
     dt_old::Float64,
-    ds::Float64,
     ds_old::Float64
 )
     c_factor = (ds^2) / (2.0 * ds_old)

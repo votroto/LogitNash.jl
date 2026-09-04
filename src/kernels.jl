@@ -85,7 +85,7 @@ end
         # Cleanup routine
         push!(cleanup_p_gt_1, quote
             LinearAlgebra.transpose!(results[$p][1], results[1][$p])
-            fill!(results[1][$p], 1.0)
+            fill!(results[1][$p], 0.0)
         end)
     end
 
@@ -99,7 +99,7 @@ end
 
     return quote
         for p in 1:N, q in 2:N
-            p != q && fill!(results[p][q], 1.0)
+            p != q && fill!(results[p][q], 0.0)
         end
 
         @inbounds begin
@@ -132,7 +132,7 @@ function jacobian_t!(J, ubar, lambda, refs)
     idx = 1
     @inbounds for p in eachindex(ubar)
         ref_a = refs[p]
-        for i in 1:length(ubar[p]) - 1
+        for i in 1:(length(ubar[p])-1)
             a = i + (i >= ref_a)
             J[idx] = (1.0 + lambda) * (ubar[p][ref_a] - ubar[p][a])
             idx += 1

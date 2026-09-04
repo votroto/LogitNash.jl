@@ -12,5 +12,6 @@ export solve
 
 # Extensions
 include("extensions/parse_nfg.jl")
+include("extensions/dump_nfg.jl")
 
 end
