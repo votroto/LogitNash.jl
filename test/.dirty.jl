@@ -5,7 +5,7 @@ using LogitNash
 using Random
 
 A = 5
-D = 6
+D = 5
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
 
 pi, status = solve(Us; stop_lambda=10.0, stop_eps=1e-2)
@@ -15,7 +15,7 @@ pi, status = solve(Us; stop_lambda=10.0, stop_eps=1e-2)
 Random.seed!(3462345634)
 
 A = 5
-D = 6
+D = 5
 
 Uss = [ntuple(_ -> randn(ntuple(_ -> A, D)...), D) for _ in 1:20]
 pis = nothing
@@ -31,7 +31,7 @@ show_profile(pis)
 
 Random.seed!(3462345634)
 
-A = 10
+A = 5
 D = 5
 
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D)

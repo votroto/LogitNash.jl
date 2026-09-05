@@ -1,3 +1,5 @@
+using Polyester
+
 function unilateral_deviations_from_derivatives!(
     out::NTuple{N,Vector{Float64}},
     dudpi::NTuple{N,NTuple{N,Matrix{Float64}}},
@@ -26,7 +28,7 @@ function build_deriv_loops(N, p, d=N, w=Any[1.0 for _ in 1:N])
         if p == 1
             writes = [:((results[1][$q])[a1, $(_actsym(q))] += val * $(w[q])) for q in 2:N]
         else
-            writes = [:((results[1][$p])[a1, $ap] += val * $(w[1]))]
+            writes = [:((results[$p][1])[$ap, a1] += val * $(w[1]))]
             accums = [:((results[$p][$q])[$ap, $(_actsym(q))] += s_shared * $(w[q])) for q in 2:N if q != p]
         end
 
@@ -54,45 +56,46 @@ function build_deriv_loops(N, p, d=N, w=Any[1.0 for _ in 1:N])
     end
 end
 
-""" unilateral_derivatives!(dudpi, payoffs, pi)
+@generated function unilateral_derivatives_p!(
+    results::NTuple{N},
+    payoffs::NTuple{N},
+    pi::NTuple{N,Vector{Float64}},
+    p::Int
+) where {N,R}
 
-Computes all the partial derivatives of U wrt π.
+    ex = Expr(:if, :(p == 1), quote
+        pay_p = payoffs[1]
+        @inbounds $(build_deriv_loops(N, 1))
+    end)
 
-                       ∂Upⁱ
-    dudpi[p][q][i,j] = ----
-                       ∂πqʲ
-"""
-@generated function unilateral_derivatives!(
+    curr = ex
+    for i in 2:N
+        next_ex = Expr(:elseif, :(p == $i), quote
+            pay_p = payoffs[$i]
+            @inbounds $(build_deriv_loops(N, i))
+        end)
+        push!(curr.args, next_ex)
+        curr = next_ex
+    end
+
+    return ex
+end
+
+function unilateral_derivatives!(
     results::NTuple{N,NTuple{N,Matrix{Float64}}},
     payoffs::NTuple{N,Array{R,N}},
     pi::NTuple{N,Vector{Float64}}
-) where {N,R<:Real}
-    nests = Expr[]
-    for p in 1:N
-        body = build_deriv_loops(N, p)
-        push!(nests, quote
-            pay_p = payoffs[$p]
-            @inbounds $body
-        end)
-    end
-
-    return quote
-        for p in 1:N, q in 2:N
+) where {N,R}
+    @batch for p in 1:N
+        for q in 1:N
             p != q && fill!(results[p][q], 0.0)
         end
-
-        $(nests[2:end]...)
-
-        for p in 2:N
-            LinearAlgebra.transpose!(results[p][1], results[1][p])
-            fill!(results[1][p], 0.0)
-        end
-
-        $(nests[1])
+        unilateral_derivatives_p!(results, payoffs, pi, p)
     end
+
+    return nothing
 end
 
-""" Mark derivative version inside the pointless diagonal results matrices. """
 function unilateral_derivatives_cached!(
     results::NTuple{N,NTuple{N,Matrix{Float64}}},
     payoffs::NTuple{N,Array{R,N}},
