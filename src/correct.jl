@@ -25,7 +25,7 @@ function correct!(
         mu, pi = extract_strategy_profiles!(ws.pi, x_nxt, ws.refs)
         lambda = expm1(t_nxt)
 
-        unilateral_derivatives!(ws.dudpi, utils, pi)
+        unilateral_derivatives_cached!(ws.dudpi, utils, pi)
         unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, pi)
         residual!(ws.res, ws.ubar, mu, lambda, ws.refs)
 

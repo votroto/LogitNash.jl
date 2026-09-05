@@ -10,10 +10,10 @@ function unilateral_deviations_from_derivatives!(
 
     return out
 end
+
 _actsym(q) = Symbol("a", q)
 
 function build_deriv_loops(N, p, d=N, w=Any[1.0 for _ in 1:N])
-    @show w
     ad = _actsym(d)
 
     if d == 1
@@ -92,33 +92,34 @@ Computes all the partial derivatives of U wrt π.
     end
 end
 
+""" Mark derivative version inside the pointless diagonal results matrices. """
+function unilateral_derivatives_cached!(
+    results::NTuple{N,NTuple{N,Matrix{Float64}}},
+    payoffs::NTuple{N,Array{R,N}},
+    pi::NTuple{N,Vector{Float64}}
+) where {N,R<:Real}
+    is_cached = true
+    for p in 1:N
+        @inbounds for i in eachindex(pi[p])
+            if results[p][p][i, 1] != pi[p][i]
+                is_cached = false
+                break
+            end
+        end
+        is_cached || break
+    end
 
+    is_cached && return nothing
 
+    for p in 1:N
+        @inbounds for i in eachindex(pi[p])
+            results[p][p][i, 1] = pi[p][i]
+        end
+    end
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    unilateral_derivatives!(results, payoffs, pi)
+    return nothing
+end
 
 function residual!(out, ubar, mu, lambda, refs)
     idx = 1

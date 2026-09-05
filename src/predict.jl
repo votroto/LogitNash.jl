@@ -2,7 +2,7 @@ function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{F
     _mu, pi = extract_strategy_profiles!(ws.pi, x, ws.refs)
     lambda = expm1(t)
 
-    unilateral_derivatives!(ws.dudpi, utils, pi)
+    unilateral_derivatives_cached!(ws.dudpi, utils, pi)
     unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, pi)
 
     jacobian_x!(ws.Fx, pi, lambda, ws.dudpi, ws.ubar, ws.refs)
