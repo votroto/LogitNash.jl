@@ -4,48 +4,40 @@ function unilateral_deviations_from_derivatives!(
     pi::NTuple{N,Vector{Float64}},
 ) where N
     for p in 1:N
-        # We can just pick the first available opponent index to contract out
         q = p == 1 ? 2 : 1
-
-        # dudpi[p][q] * pi[q] directly yields the length-actions_p vector
         mul!(out[p], dudpi[p][q], pi[q])
     end
 
     return out
 end
+_actsym(q) = Symbol("a", q)
 
-function build_deriv_loops(d, w, p, N)
-    ad = Symbol("a", d)
+function build_deriv_loops(N, p, d=N, w=Any[1.0 for _ in 1:N])
+    @show w
+    ad = _actsym(d)
 
     if d == 1
-        a_all = [Symbol("a", k) for k in 1:N]
-        ap = Symbol("a", p)
+        a_all = [_actsym(k) for k in 1:N]
+        ap = _actsym(p)
+
+        writes = nothing
+        accums = Expr[]
 
         if p == 1
-            # Contiguous writes for q != 1
-            writes = [:((results[1][$q])[a1, $(Symbol("a", q))] += val * $(w[q])) for q in 2:N]
-
-            return quote
-                @simd ivdep for a1 in axes(pay_p, 1)
-                    val = pay_p[$(a_all...)]
-                    $(writes...)
-                end
-            end
+            writes = [:((results[1][$q])[a1, $(_actsym(q))] += val * $(w[q])) for q in 2:N]
         else
-            # Shared scalar reductions for all q > 1
-            accumulators = [:((results[$p][$q])[$ap, $(Symbol("a", q))] += s_shared * $(w[q])) for q in 2:N if q != p]
+            writes = [:((results[1][$p])[a1, $ap] += val * $(w[1]))]
+            accums = [:((results[$p][$q])[$ap, $(_actsym(q))] += s_shared * $(w[q])) for q in 2:N if q != p]
+        end
 
-            return quote
-                s_shared = 0.0
-                @simd ivdep for a1 in axes(pay_p, 1)
-                    val = pay_p[$(a_all...)]
-
-                    (results[1][$p])[a1, $ap] += val * $(w[1])
-
-                    s_shared += val * pi[1][a1]
-                end
-                $(accumulators...)
+        return quote
+            s_shared = 0.0
+            @simd ivdep for a1 in axes(pay_p, 1)
+                val = pay_p[$(a_all...)]
+                $(writes...)
+                s_shared += val * pi[1][a1]
             end
+            $(accums...)
         end
     end
 
@@ -57,44 +49,31 @@ function build_deriv_loops(d, w, p, N)
     return quote
         for $ad in axes(pay_p, $d)
             $(assignments...)
-            $(build_deriv_loops(d - 1, next_w, p, N))
+            $(build_deriv_loops(N, p, d - 1, next_w))
         end
     end
 end
 
-# dudpi[p][q]
+""" unilateral_derivatives!(dudpi, payoffs, pi)
+
+Computes all the partial derivatives of U wrt π.
+
+                       ∂Upⁱ
+    dudpi[p][q][i,j] = ----
+                       ∂πqʲ
+"""
 @generated function unilateral_derivatives!(
     results::NTuple{N,NTuple{N,Matrix{Float64}}},
     payoffs::NTuple{N,Array{R,N}},
     pi::NTuple{N,Vector{Float64}}
 ) where {N,R<:Real}
-    math_p_gt_1 = Expr[]
-    cleanup_p_gt_1 = Expr[]
-
-    # 1. Generate blocks for p > 1
-    for p in 2:N
-        init_w = Any[1.0 for _ in 1:N]
-        body = build_deriv_loops(N, init_w, p, N)
-
-        # Pure math loop
-        push!(math_p_gt_1, quote
+    nests = Expr[]
+    for p in 1:N
+        body = build_deriv_loops(N, p)
+        push!(nests, quote
             pay_p = payoffs[$p]
-            $body
+            @inbounds $body
         end)
-
-        # Cleanup routine
-        push!(cleanup_p_gt_1, quote
-            LinearAlgebra.transpose!(results[$p][1], results[1][$p])
-            fill!(results[1][$p], 0.0)
-        end)
-    end
-
-    # 2. Generate block for p = 1
-    init_w_1 = Any[1.0 for _ in 1:N]
-    body_1 = build_deriv_loops(N, init_w_1, 1, N)
-    math_p_1 = quote
-        pay_p = payoffs[1]
-        $body_1
     end
 
     return quote
@@ -102,18 +81,44 @@ end
             p != q && fill!(results[p][q], 0.0)
         end
 
-        @inbounds begin
-            # PHASE 1: Keep the instruction cache hot for all p > 1 loops
-            $(math_p_gt_1...)
+        $(nests[2:end]...)
 
-            # PHASE 2: Do all memory transposes and workspace clearing at once
-            $(cleanup_p_gt_1...)
-
-            # PHASE 3: Run the final math block for p = 1 into the clean arrays
-            $math_p_1
+        for p in 2:N
+            LinearAlgebra.transpose!(results[p][1], results[1][p])
+            fill!(results[1][p], 0.0)
         end
+
+        $(nests[1])
     end
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 function residual!(out, ubar, mu, lambda, refs)
     idx = 1
