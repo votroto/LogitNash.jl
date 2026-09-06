@@ -13,7 +13,7 @@ end
 
 _actsym(q) = Symbol("a", q)
 
-function build_deriv_loops(N, p, d=N, w=Any[1.0 for _ in 1:N])
+function _build_deriv_loops(N, p, d, w)
     ad = _actsym(d)
 
     if d == 1
@@ -41,7 +41,7 @@ function build_deriv_loops(N, p, d=N, w=Any[1.0 for _ in 1:N])
         end
     end
 
-    # Helper to clearly define which dimensions get hoisted constants
+    # Define which dimensions get hoisted constants
     is_active(q) = (q != p && d != p && d != q)
     next_w = Any[is_active(q) ? Symbol("w_d", d, "_q", q) : w[q] for q in 1:N]
     assignments = [:($(next_w[q]) = $(w[q]) * pi[$d][$ad]) for q in 1:N if is_active(q)]
@@ -49,8 +49,15 @@ function build_deriv_loops(N, p, d=N, w=Any[1.0 for _ in 1:N])
     return quote
         for $ad in axes(pay_p, $d)
             $(assignments...)
-            $(build_deriv_loops(N, p, d - 1, next_w))
+            $(_build_deriv_loops(N, p, d - 1, next_w))
         end
+    end
+end
+
+function _build_deriv_loops(N, p)
+    return quote
+        pay_p = payoffs[$p]
+        @inbounds $(_build_deriv_loops(N, p, N, Any[1.0 for _ in 1:N]))
     end
 end
 
@@ -58,23 +65,16 @@ end
 
 Computes all the partial derivatives of U wrt π.
 
-                       ∂Upⁱ
-    dudpi[p][q][i,j] = ----
-                       ∂πqʲ
+    ∂Upⁱ
+    ---- = dudpi[p][q][i,j]
+    ∂πqʲ
 """
 @generated function unilateral_derivatives!(
     results::NTuple{N,NTuple{N,Matrix{Float64}}},
     payoffs::NTuple{N,Array{R,N}},
     pi::NTuple{N,Vector{Float64}}
 ) where {N,R<:Real}
-    nests = Expr[]
-    for p in 1:N
-        body = build_deriv_loops(N, p)
-        push!(nests, quote
-            pay_p = payoffs[$p]
-            @inbounds $body
-        end)
-    end
+    nests = Expr[_build_deriv_loops(N, p) for p in 1:N]
 
     return quote
         for p in 1:N, q in 2:N
