@@ -1,0 +1,36 @@
+include("utils.jl")
+
+using Revise
+using LogitNash
+using Random
+
+#Random.seed!(3462345634)
+
+A = 2
+D = 3
+Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D)
+
+function round!(A; kwargs...)
+    for i in eachindex(A)
+        A[i] = round(A[i]; kwargs...)
+    end
+end
+
+@time for i in 1:100000
+    if i % 1000 == 0
+        print(i, " ")
+    end
+
+    for p in 1:D
+        randn!(Us[p])
+        round!(Us[p];)
+    end
+
+    ne, st = solve(Us; stop_lambda=Inf, stop_eps=1e-6)
+
+    if st.regret > 1e-6 || st.lambda < 0 || st.stall
+        println()
+        println(Us)
+
+    end
+end

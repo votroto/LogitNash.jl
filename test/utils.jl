@@ -1,20 +1,53 @@
 using Printf
+using Logging
 
-function show_profile(profile;)
+struct PathLogger <: AbstractLogger
+    stream::IO
+end
+
+function Logging.handle_message(logger::PathLogger, _lvl, _msg, _mod, _grp, _id, _file, _ln; pi, lambda)
+    dump_profile(logger.stream, pi)
+    println(logger.stream, " ", lambda)
+end
+Logging.shouldlog(::PathLogger, _lvl, _mod, group, id) = id == :step && group == :tracker
+Logging.min_enabled_level(::PathLogger) = Logging.Debug
+
+function show_profile(io, profile)
     format_strat(strat) = join((@sprintf "%6.4f" a for a in strat), ", ")
-    println(join(("[$(format_strat(s))]" for s in profile), "\n"))
+    println(io, join(("[$(format_strat(s))]" for s in profile), "\n"))
 end
 
-function dump_profile(profile)
+show_profile(profile) = show_profile(stdout, profile)
+
+function dump_profile(io, profile)
     format_strat(strat) = join((@sprintf "%.4e" a for a in strat), " ")
-    println(join((format_strat(s) for s in profile), " "))
+    print(io, join((format_strat(s) for s in profile), " "))
 end
 
-function _unilateral_deviations_simple(
+dump_profile(profile) = dump_profile(stdout, profile)
+
+function unilateral_derivatives_simple(
+    payoffs::NTuple{N,Array{R,N}},
+    pi::NTuple{N,Vector{Float64}}
+) where {N,R}
+    dims = ntuple(i -> size(payoffs, i), Val(N))
+    results = ntuple(p -> ntuple(q -> zeros(dims[p], dims[q]), Val(N)), Val(N))
+    for i in CartesianIndices(first(payoffs))
+        for p in 1:N, q in 1:N
+            p==q && continue
+            w = prod(pi[b][i[b]] for b in 1:N if b != p && b != q)
+            results[p][q][i[p], i[q]] += w * payoffs[p][i]
+        end
+    end
+    results
+end
+
+function unilateral_deviations_simple(
     payoffs::NTuple{N,Array},
     xs::NTuple{N,Vector}
 ) where N
-    result = ntuple(i -> zeros(size(payoffs[i], i)), N)
+    dims = ntuple(i -> size(payoffs, i), Val(N))
+    result = ntuple(i -> zeros(dims[i]), Val(N))
     for i in CartesianIndices(first(payoffs))
         for p in 1:N
             w = prod(xs[q][i[q]] for q in 1:N if q != p)

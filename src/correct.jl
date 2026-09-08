@@ -85,17 +85,18 @@ function correct!(
     return STATUS_MAX_ITERS, x_nxt, t_nxt
 end
 
-function validate_step!(
+function validate_step(
     status::StepStatus,
     x_next::Vector{Float64},
     t_next::Float64,
     x_pred::Vector{Float64},
     t_pred::Float64,
+    det_sign::Float64,
     ds::Float64,
     ws
 )
     if status != STATUS_SUCCESS
-        return status
+        return status, 0.0
     end
 
     dist_sq = (t_next - t_pred)^2
@@ -103,20 +104,29 @@ function validate_step!(
         dist_sq += (x_next[j] - x_pred[j])^2
     end
 
-    if dist_sq > (1.0 * ds)^2
-        return STATUS_LARGE_DISTANCE
+    if dist_sq > (0.5 * ds)^2
+        return STATUS_LARGE_DISTANCE, 0.0
     end
 
     cur_det_sign = lu_det_sign_rcond_heur(ws.J_aug, ws.ipiv)
-    if ws.det_sign[1] == 0.0 || cur_det_sign == 0.0
-        ws.det_sign[1] = cur_det_sign
-    elseif cur_det_sign != ws.det_sign[1]
-        if (dist_sq > (0.5 * ds)^2 || ds > 1e-5)
-            return STATUS_JUMP
-        else
-            ws.det_sign[1] = cur_det_sign
-        end
+    if det_sign != 0.0 && cur_det_sign != 0.0 && cur_det_sign != det_sign
+        return STATUS_JUMP, cur_det_sign
     end
 
-    return STATUS_SUCCESS
+    return STATUS_SUCCESS, cur_det_sign
+end
+
+function validate_residual(x_mid, t_mid, utils, ws; abs_tol=1e-3)
+    mu, pi = extract_strategy_profiles!(ws.pi, x_mid, ws.refs)
+    lambda = expm1(t_mid)
+
+    unilateral_derivatives_cached!(ws.dudpi, utils, pi)
+    unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, pi)
+    residual!(ws.res, ws.ubar, mu, lambda, ws.refs)
+
+    if dot(ws.res, ws.res) <= abs_tol^2
+        return STATUS_SUCCESS
+    else
+        return STATUS_JUMP
+    end
 end

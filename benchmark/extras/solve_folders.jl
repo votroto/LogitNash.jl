@@ -1,5 +1,3 @@
-using Revise
-
 using LogitNash
 using Printf
 
@@ -42,26 +40,13 @@ function timed_solve_file(gamefile)
     end
 end
 
-function solve_folders(root::String)
-    items = readdir(root, join=true)
-    subdirs = filter(isdir, items)
-    gamefiles = filter(isfile, items)
-
-    for subdir in subdirs
-        solve_folders(subdir)
-    end
-
-    if isempty(gamefiles)
-        return
-    end
-
+function timed_solve_files(path, files)
     total_time = 0.0
     solved_games = 0
     dataset_fails = String[]
 
-    GC.gc(false)
-
-    for gamefile in gamefiles
+    for file in files
+        gamefile = joinpath(path, file)
         tim, sym, ok = timed_solve_file(gamefile)
 
         print(sym)
@@ -73,12 +58,21 @@ function solve_folders(root::String)
         end
     end
 
-    @printf "\nAvg solvetime for dataset '%s' (%d): %.1f ms\n" root solved_games (total_time * 1000 / solved_games)
+    avg_time = (total_time * 1000 / solved_games)
+    @printf "\nAvg solvetime for dataset '%s' (%d): %.1f ms\n" path solved_games avg_time
 
     if !isempty(dataset_fails)
-        @warn "Failed games in dataset '$root'" dataset_fails
+        @warn "Failed games in dataset '$path'" dataset_fails
     end
     println()
+end
+
+function solve_folders(root)
+    for (path, _, gamefiles) in walkdir(root)
+        isempty(gamefiles) && continue
+        GC.gc(false)
+        timed_solve_files(path, gamefiles)
+    end
 end
 
 # solve_folders("nfgs")

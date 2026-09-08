@@ -1,6 +1,8 @@
 using LinearAlgebra
 using LinearAlgebra: BlasInt
 
+const DECEL_FACTOR::Float64 = 2.236
+
 function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {N}
     n = length(x_template)
 
@@ -19,11 +21,9 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
     x_pred = Vector{Float64}(undef, n)
     x_nxt = Vector{Float64}(undef, n)
 
-    det_sign = Float64[1.0]
-
     refs = Int[dims[i] for i in 1:N]
 
-    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, x_pred, x_nxt, det_sign, refs)
+    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, x_pred, x_nxt, refs)
 end
 
 function solve(
@@ -47,6 +47,7 @@ function solve(
     ds_old = ds
 
     ws = make_hc_workspace(x, size(first(utils)))
+    det_sign = 1.0
 
     iteration = 0
     successes_in_row = 0
@@ -55,6 +56,8 @@ function solve(
     while t <= stop_t && iteration <= stop_iters && !stall && t > -10.0
         update_predictor_jacobian!(x, t, dx, dt, utils, ws)
         _regret = max_deviation_incentive(ws.ubar, ws.pi)
+
+        @debug "Step" _id=:step pi=ws.pi lambda=expm1(t)
 
         if _regret <= stop_eps
             regret = _regret
@@ -70,11 +73,18 @@ function solve(
         while true
             x_pred, t_pred = predict_step_quadratic!(ws.x_pred, x, t, dx, dt, ds, dx_old, dt_old, ds_old)
             st_cor, x_nxt, t_nxt = correct!(ws.x_nxt, x_pred, t_pred, dx, dt, utils, ws)
-            st_val = validate_step!(st_cor, x_nxt, t_nxt, x_pred, t_pred, ds, ws)
+            st_val, det_nxt = validate_step(st_cor, x_nxt, t_nxt, x_pred, t_pred, det_sign, ds, ws)
+
+            if st_val == STATUS_JUMP
+                ds_mid = ds / DECEL_FACTOR
+                x_mid, t_mid = predict_step_quadratic!(ws.x_pred, x, t, dx, dt, ds_mid, dx_old, dt_old, ds_old)
+                st_val = validate_residual(x_mid, t_mid, utils, ws)
+            end
 
             if st_val == STATUS_SUCCESS
                 copyto!(x, x_nxt)
                 t = t_nxt
+                det_sign = det_nxt
 
                 copyto!(dx_old, dx)
                 dt_old = dt
@@ -83,7 +93,7 @@ function solve(
                 pivot_references!(x, dx, dx_old, ws.pi, ws.refs)
                 break
             else
-                ds /= 2.0
+                ds /= DECEL_FACTOR
                 successes_in_row = 0
                 if ds <= 1e-12
                     stall = true
