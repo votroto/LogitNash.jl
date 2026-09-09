@@ -9,7 +9,7 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
     pi = ntuple(i -> Vector{Float64}(undef, dims[i]), Val(N))
     res = Vector{Float64}(undef, n)
     ubar = ntuple(i -> zeros(dims[i]), Val(N))
-    dudpi = ntuple(p -> ntuple(q -> zeros(dims[p], dims[q]), Val(N)), Val(N))
+    dudpi = ntuple(p -> ntuple(q -> fill(NaN, dims[p], dims[q]), Val(N)), Val(N))
 
     J_aug = zeros(n + 1, n + 1)
     Fx = view(J_aug, 1:n, 1:n)
@@ -26,28 +26,20 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
     return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, x_pred, x_nxt, refs)
 end
 
-function solve(
-    utils::NTuple{N,Array{F,N}};
+function _solve!(
+    utils::NTuple{N,Array{R,N}},
+    x::Vector{X}, t::X, dx::Vector{X}, dt::X, ds::X, ws;
     stop_iters::Int=1000,
     stop_lambda::Float64=1e6,
     stop_eps::Float64=1e-6
-) where {N,F<:Real}
-    validate_game(utils)
+) where {N,R<:Real,X}
     stop_t = log1p(stop_lambda)
-
-    x = uniform_xprofile(utils)
-    t = 0.0
-
-    dx = zero(x)
-    dt = 1.0
-    ds = 0.01
 
     dx_old = copy(dx)
     dt_old = dt
     ds_old = ds
 
-    ws = make_hc_workspace(x, size(first(utils)))
-    det_sign = 1.0
+    det_sign = 0.0
 
     iteration = 0
     successes_in_row = 0
@@ -57,7 +49,7 @@ function solve(
         update_predictor_jacobian!(x, t, dx, dt, utils, ws)
         _regret = max_deviation_incentive(ws.ubar, ws.pi)
 
-        @debug "Step" _id=:step pi=ws.pi lambda=expm1(t)
+        @debug "Path" _id=:step pi=ws.pi lambda=expm1(t)
 
         if _regret <= stop_eps
             regret = _regret
@@ -110,10 +102,28 @@ function solve(
         iteration += 1
     end
 
+    @debug "Path" _id=:end pi=ws.pi lambda=expm1(t)
+
     if isnan(regret)
         update_predictor_jacobian!(x, t, dx, dt, utils, ws)
         regret = max_deviation_incentive(ws.ubar, ws.pi)
     end
 
     return ws.pi, (; lambda=expm1(t), iteration, regret, stall)
+end
+
+function solve(utils::NTuple{N,Array{R,N}}; kwargs...) where {N,R<:Real}
+    validate_game(utils)
+    dims = size(first(utils))
+
+    x = uniform_xprofile(dims)
+    t = 0.0
+
+    dx = zero(x)
+    dt = 1.0
+    ds = 0.01
+
+    ws = make_hc_workspace(x, dims)
+
+    _solve!(utils, x, t, dx, dt, ds, ws; kwargs...)
 end

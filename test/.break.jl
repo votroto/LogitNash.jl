@@ -22,8 +22,8 @@ end
     end
 
     for p in 1:D
-        randn!(Us[p])
-        round!(Us[p];)
+        rand!(Us[p])
+        round!(Us[p]; digits=2)
     end
 
     ne, st = solve(Us; stop_lambda=Inf, stop_eps=1e-6)

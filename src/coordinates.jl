@@ -34,8 +34,8 @@ function extract_strategy_profiles!(pi_buffs::NTuple{N}, x, refs) where N
     return mu, pi_buffs
 end
 
-function uniform_xprofile(Us)
-    nx = sum(size(Us[i], i) - 1 for i in eachindex(Us))
+function uniform_xprofile(dims)
+    nx = sum(d - 1 for d in dims)
     zeros(nx)
 end
 

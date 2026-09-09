@@ -1,15 +1,21 @@
 using Printf
 using Logging
 
+"""Used for dumping the path debug information to a gnuplot readable format"""
 struct PathLogger <: AbstractLogger
     stream::IO
 end
 
-function Logging.handle_message(logger::PathLogger, _lvl, _msg, _mod, _grp, _id, _file, _ln; pi, lambda)
-    dump_profile(logger.stream, pi)
-    println(logger.stream, " ", lambda)
+function Logging.handle_message(logger::PathLogger, _lvl, _msg, _mod, _grp, id, _file, _ln; pi, lambda)
+    if id == :end
+        println(logger.stream, "\n")
+    elseif id == :step
+        dump_profile(logger.stream, pi)
+        println(logger.stream, " ", lambda)
+    end
 end
-Logging.shouldlog(::PathLogger, _lvl, _mod, group, id) = id == :step && group == :tracker
+
+Logging.shouldlog(::PathLogger, _lvl, _mod, group, id) = id in (:step, :end) && group == :tracker
 Logging.min_enabled_level(::PathLogger) = Logging.Debug
 
 function show_profile(io, profile)

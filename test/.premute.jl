@@ -36,7 +36,6 @@ function solve_ln(tensors; stop_lambda=1e6, stop_eps=NaN)
     ne
 end
 
-
 println()
 
 for (path, dirs, files) in walkdir("nfgs")
@@ -47,7 +46,7 @@ for (path, dirs, files) in walkdir("nfgs")
         data = read(joinpath(path, f))
         tensors = LogitNash.parse_nfg(data)
 
-        pi_orig = solve_gl(tensors)
+        pi_orig = solve_ln(tensors)
 
         for perm in 1:5
             player_perm = shuffle(eachindex(tensors))
@@ -56,7 +55,7 @@ for (path, dirs, files) in walkdir("nfgs")
             payoffs_perm = scramble_game(tensors, player_perm, action_perm)
             expected = scramble_eq(pi_orig, player_perm, action_perm)
 
-            pi_perm = solve_gl(payoffs_perm)
+            pi_perm = solve_ln(payoffs_perm)
 
             if all((<=)(1e-6), norm.(expected .- pi_perm))
                 print("_")
