@@ -1,10 +1,10 @@
 include("utils.jl")
 
+# Script for fuzzing the solver.
+
 using Revise
 using LogitNash
 using Random
-
-#Random.seed!(3462345634)
 
 A = 2
 D = 3

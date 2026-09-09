@@ -1,22 +1,4 @@
 using Printf
-using Logging
-
-"""Used for dumping the path debug information to a gnuplot readable format"""
-struct PathLogger <: AbstractLogger
-    stream::IO
-end
-
-function Logging.handle_message(logger::PathLogger, _lvl, _msg, _mod, _grp, id, _file, _ln; pi, lambda)
-    if id == :end
-        println(logger.stream, "\n")
-    elseif id == :step
-        dump_profile(logger.stream, pi)
-        println(logger.stream, " ", lambda)
-    end
-end
-
-Logging.shouldlog(::PathLogger, _lvl, _mod, group, id) = id in (:step, :end) && group == :tracker
-Logging.min_enabled_level(::PathLogger) = Logging.Debug
 
 function show_profile(io, profile)
     format_strat(strat) = join((@sprintf "%6.4f" a for a in strat), ", ")
@@ -24,13 +6,6 @@ function show_profile(io, profile)
 end
 
 show_profile(profile) = show_profile(stdout, profile)
-
-function dump_profile(io, profile)
-    format_strat(strat) = join((@sprintf "%.4e" a for a in strat), " ")
-    print(io, join((format_strat(s) for s in profile), " "))
-end
-
-dump_profile(profile) = dump_profile(stdout, profile)
 
 function unilateral_derivatives_simple(
     payoffs::NTuple{N,Array{R,N}},

@@ -1,9 +1,37 @@
-include("utils.jl")
+# Starts from random points to try and walk all the zero-residual paths present
+# in a game. The output is tailored for Gnuplot. The path output is implemented
+# by parsing the debug log.
 
 using Revise
 using LogitNash
 using LinearAlgebra
 using Printf
+using Logging
+
+"""Used for dumping the path debug information to a gnuplot readable format"""
+struct PathLogger <: AbstractLogger
+    stream::IO
+end
+
+function Logging.handle_message(logger::PathLogger, _lvl, _msg, _mod, _grp, id, _file, _ln; pi, lambda)
+    if id == :end
+        println(logger.stream, "\n")
+    elseif id == :step
+        dump_profile(logger.stream, pi)
+        println(logger.stream, " ", lambda)
+    end
+end
+
+Logging.shouldlog(::PathLogger, _lvl, _mod, group, id) = id in (:step, :end) && group == :tracker
+Logging.min_enabled_level(::PathLogger) = Logging.Debug
+
+function dump_profile(io, profile)
+    format_strat(strat) = join((@sprintf "%.4e" a for a in strat), " ")
+    print(io, join((format_strat(s) for s in profile), " "))
+end
+
+dump_profile(profile) = dump_profile(stdout, profile)
+
 
 function rand_range(t_min, t_max)
     rand() * (t_max - t_min) + t_min
@@ -65,10 +93,13 @@ function explore_solutions(
     end
 end
 
+# Example 3p-2a game with a tricky hairpin-shaped path.
 
-# ok but come on...
-fail222 = ([0.3 0.89; 0.6 0.7;;; 0.78 0.79; 0.78 0.5], [0.22 0.68; 0.4 0.81;;; 0.91 0.85; 0.72 0.12], [0.77 0.01; 0.15 0.2;;; 0.79 0.02; 0.46 0.22])
-
+hairpin222 = (
+    [0.3 0.89; 0.6 0.7;;; 0.78 0.79; 0.78 0.5],
+    [0.22 0.68; 0.4 0.81;;; 0.91 0.85; 0.72 0.12],
+    [0.77 0.01; 0.15 0.2;;; 0.79 0.02; 0.46 0.22]
+)
 
 A = 2
 D = 3
@@ -79,7 +110,7 @@ open("/tmp/path.dat", "w") do io
     logger = PathLogger(io)
 
     with_logger(logger) do
-        @time explore_solutions(fail222;num_starts=0)
+        @time explore_solutions(hairpin222)
     end
 
 end

@@ -2,22 +2,20 @@ using LogitNash
 using Random
 using LinearAlgebra
 
-#=
-// An implementation of the Blotto: https://en.wikipedia.org/wiki/Blotto_game
-// This version supports n >= 2 players. Each player distributes M coins on N
-// fields. Each field is won by at most one player: the one with the most
-// coins on the specific field; if there is a draw, the field is considered
-// drawn (not won by any player), and hence ignored in the scoring. The winner
-// is the player with the most won fields: all player have won the same number
-// of fields, they each receive 0. Otherwise, the winners share 1 / (number of
-// winners) and losers share -1 / (number of losers), reducing to {-1,0,1} in
-// the 2-player case.
-//
-// Parameters:
-//   "coins"      int    number of coins each player starts with (default: 10)
-//   "fields"     int    number of fields (default: 3)
-//   "players"    int    number of players (default: 2)
-=#
+#  An implementation of the Blotto: https://en.wikipedia.org/wiki/Blotto_game
+#  This version supports n >= 2 players. Each player distributes M coins on N
+#  fields. Each field is won by at most one player: the one with the most
+#  coins on the specific field; if there is a draw, the field is considered
+#  drawn (not won by any player), and hence ignored in the scoring. The winner
+#  is the player with the most won fields: all player have won the same number
+#  of fields, they each receive 0. Otherwise, the winners share 1 / (number of
+#  winners) and losers share -1 / (number of losers), reducing to {-1,0,1} in
+#  the 2-player case.
+#
+#  Parameters:
+#    "coins"      int    number of coins each player starts with (default: 10)
+#    "fields"     int    number of fields (default: 3)
+#    "players"    int    number of players (default: 2)
 
 function generate_blotto_actions(coins::Int, ::Val{K}) where K
     actions = NTuple{K,Int}[]
