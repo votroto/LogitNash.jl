@@ -39,9 +39,8 @@ function uniform_xprofile(dims)
     zeros(nx)
 end
 
-function pivot_reference!(x_p::AbstractVector{Float64}, dx_p::AbstractVector{Float64}, dx_old_p::AbstractVector{Float64}, p::Int, new_ref_idx::Int, refs)
-    old_ref = refs[p]
-    new_ref = new_ref_idx + (new_ref_idx >= old_ref)
+function pivot_reference!(x_p, dx_p, dx_old_p, new_ref, old_ref)
+    new_ref_idx = new_ref - (new_ref > old_ref)
 
     val_x = x_p[new_ref_idx]
     val_dx = dx_p[new_ref_idx]
@@ -61,8 +60,6 @@ function pivot_reference!(x_p::AbstractVector{Float64}, dx_p::AbstractVector{Flo
     shift_and_insert!(x_p, new_ref_idx, dest_idx, -val_x)
     shift_and_insert!(dx_p, new_ref_idx, dest_idx, -val_dx)
     shift_and_insert!(dx_old_p, new_ref_idx, dest_idx, -val_dx_old)
-
-    refs[p] = new_ref
 end
 
 function pivot_references!(x, dx, dx_old, pi::NTuple{N}, refs) where N
@@ -75,8 +72,8 @@ function pivot_references!(x, dx, dx_old, pi::NTuple{N}, refs) where N
     for p in 1:N
         best_a = argmax(pi[p])
         if best_a != refs[p]
-            idx = best_a - (best_a > refs[p])
-            pivot_reference!(mu_x[p], mu_dx[p], mu_dx_old[p], p, idx, refs)
+            pivot_reference!(mu_x[p], mu_dx[p], mu_dx_old[p], best_a, refs[p])
+            refs[p] = best_a
         end
     end
 end

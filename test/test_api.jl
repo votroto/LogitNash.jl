@@ -29,10 +29,16 @@ function infs_nans_are_detected()
     @test_throws ArgumentError solve(payoffsNaN)
 end
 
+function type_warning_unexpected_narrow_to_f64()
+    payoffs = ([big"2.0";;], [big"3.1";;])
+    @test_logs (:warn, )  solve(payoffs)
+end
+
 @testset "API tests" begin
     single_player_game_is_rejected()
     mismatched_dimensions_are_detected()
     empty_games_are_rejected()
     dimensions_agree_with_playercount()
     infs_nans_are_detected()
+    type_warning_unexpected_narrow_to_f64()
 end
