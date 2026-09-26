@@ -17,7 +17,6 @@ function _build_deriv_loops(N, p, d, w)
     ad = _actsym(d)
 
     if d == 1
-        a_all = [_actsym(k) for k in 1:N]
         ap = _actsym(p)
 
         writes = nothing
@@ -33,10 +32,11 @@ function _build_deriv_loops(N, p, d, w)
         return quote
             s_shared = 0.0
             @simd ivdep for a1 in axes(pay_p, 1)
-                val = pay_p[$(a_all...)]
+                val = pay_p[linear_offset+a1]
                 $(writes...)
                 s_shared += val * pi[1][a1]
             end
+            linear_offset += size(pay_p, 1)
             $(accums...)
         end
     end
@@ -57,6 +57,7 @@ end
 function _build_deriv_loops(N, p)
     return quote
         pay_p = payoffs[$p]
+        linear_offset = 0
         @inbounds $(_build_deriv_loops(N, p, N, Any[1.0 for _ in 1:N]))
     end
 end
