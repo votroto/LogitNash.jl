@@ -27,7 +27,7 @@ function unilateral_deviations_simple(
     payoffs::NTuple{N,Array},
     xs::NTuple{N,Vector}
 ) where N
-    dims = ntuple(i -> size(payoffs, i), Val(N))
+    dims = ntuple(i -> size(payoffs[i], i), Val(N))
     result = ntuple(i -> zeros(dims[i]), Val(N))
     for i in CartesianIndices(first(payoffs))
         for p in 1:N
@@ -38,7 +38,7 @@ function unilateral_deviations_simple(
     result
 end
 
-function _max_deviation_incentive(
+function max_deviation_incentive(
     deviations::NTuple{N,Vector},
     xs::NTuple{N,Vector}
 ) where N
@@ -54,6 +54,6 @@ function equilibrium_gap_precise(
 ) where N
     xs = ntuple(i -> normalize(BigFloat.(_xs[i]), 1), N)
 
-    deviations = _unilateral_deviations_simple(payoffs, xs)
-    _max_deviation_incentive(deviations, xs)
+    deviations = unilateral_deviations_simple(payoffs, xs)
+    max_deviation_incentive(deviations, xs)
 end

@@ -56,7 +56,7 @@ end
 function explore_solutions(
     utils::NTuple{N};
     num_starts::Int=200,
-    stop_iters::Int=200,
+    stop_iters::Int=500,
 ) where {N}
     dims = size(first(utils))
 
@@ -64,15 +64,15 @@ function explore_solutions(
 
     _dx = zero(_x)
     dt = 1.0
-    ds = 0.01
+    ds = 0.0001
 
     _ws = LogitNash.make_hc_workspace(_x, dims)
     ws = LogitNash.make_hc_workspace(_x, dims)
     dx = zero(_x)
 
-    for iter in 0:num_starts
-        x_guess = iter == 0 ? _x : guess_x(dims)
-        t_guess = iter == 0 ? 0.0 : rand_range(1.0, 8.0)
+    for iter in 0:1
+        x_guess = iter == 0 ? [0.0,0.0]  : [0.23515770916931075,-0.8258654882215771] #_x : guess_x(dims)
+        t_guess =  iter == 0 ? 0.0 : 0.7315243186056958 # iter == 0 ? 10.0 : rand_range(1.0, 8.0)
 
         reset_refs(_ws, dims)
 
@@ -86,10 +86,10 @@ function explore_solutions(
         dx, dt = LogitNash.predict_direction!(dx, _ws)
 
         reset_refs(ws, dims)
-        LogitNash._solve!(utils, 1*x, t, +1*dx, +1*dt, ds, ws; stop_iters)
+        LogitNash._solve!(utils, 1*x, t, +1*dx, +1*dt, ds, ws; stop_iters, stop_eps=NaN)
 
         reset_refs(ws, dims)
-        LogitNash._solve!(utils, 1*x, t, -1*dx, -1*dt, ds, ws; stop_iters)
+        LogitNash._solve!(utils, 1*x, t, -1*dx, -1*dt, ds, ws; stop_iters, stop_eps=NaN)
     end
 end
 
@@ -106,11 +106,57 @@ D = 3
 
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D)
 
+A = Float64[3 0; 0 1]
+B = Float64[1 0; 0 3]
+
 open("/tmp/path.dat", "w") do io
     logger = PathLogger(io)
-
     with_logger(logger) do
-        @time explore_solutions(hairpin222)
+        @time explore_solutions((A, B))
     end
-
 end
+
+#=
+A = Float64[3 0; 0 1 + .2]
+B = Float64[1 0; 0 3]
+
+open("/tmp/path.p01.dat", "w") do io
+    logger = PathLogger(io)
+    with_logger(logger) do
+        @time explore_solutions((A, B))
+    end
+end
+
+A = Float64[3 0; 0 1 + .05]
+B = Float64[1 0; 0 3]
+
+open("/tmp/path.p001.dat", "w") do io
+    logger = PathLogger(io)
+    with_logger(logger) do
+        @time explore_solutions((A, B))
+    end
+end
+
+
+A = Float64[3 0; 0 1 + .005]
+B = Float64[1 0; 0 3]
+
+open("/tmp/path.p0001.dat", "w") do io
+    logger = PathLogger(io)
+    with_logger(logger) do
+        @time explore_solutions((A, B))
+    end
+end
+
+
+A = Float64[3 0; 0 1 - .1]
+B = Float64[1 0; 0 3]
+
+open("/tmp/path.m01.dat", "w") do io
+    logger = PathLogger(io)
+    with_logger(logger) do
+        @time explore_solutions((A, B))
+    end
+end
+
+=#

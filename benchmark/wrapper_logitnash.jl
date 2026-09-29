@@ -1,12 +1,15 @@
+include("../test/utils.jl")
 using LogitNash
 using Printf
+using LinearAlgebra
 
-function timed_solve(data; stop_lambda=1e6, stop_eps=NaN)
+function timed_solve(data; stop_lambda=Inf, stop_eps=1e-8)
     t_parse = @timed tensors = LogitNash.parse_nfg(data)
     t_solve = @timed ne, status = solve(tensors; stop_lambda, stop_eps)
+    gap = equilibrium_gap_precise(tensors, ne)
 
     err = status.lambda < stop_lambda && status.regret > stop_eps || status.stall
-    return t_parse, t_solve, err
+    return t_parse, t_solve, err, gap
 end
 
 function main(cmd, num_samples)
@@ -17,8 +20,8 @@ function main(cmd, num_samples)
         try
             data = read(cmd)
             GC.gc(false)
-            tp, ts, err = timed_solve(data)
-            @printf "%.6f %d\n" (tp.time + ts.time) err
+            tp, ts, err, gap  = timed_solve(data)
+            @printf "%.4e %d %.4e\n" (tp.time + ts.time) err gap
         catch e
             @error e
         end

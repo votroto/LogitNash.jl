@@ -3,7 +3,7 @@ include("utils.jl")
 using Revise
 using LogitNash
 using Random
-
+#=
 A = 5
 D = 6
 Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D);
@@ -19,13 +19,14 @@ pis = nothing
 end
 
 Random.seed!(3462345634)
+=#
 
-A = 5
-D = 5
+A = 40
+D = 2
 
-Us = ntuple(_ -> randn(ntuple(_ -> A, D)...), D)
+Us = ntuple(_ -> rand(ntuple(_ -> A, D)...), D);
 
-ne, st = solve(Us)
+@time ne, st = solve(Us)
 
 @show st
 show_profile(ne)
