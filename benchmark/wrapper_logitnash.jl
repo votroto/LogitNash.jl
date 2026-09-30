@@ -9,16 +9,16 @@ function timed_solve(data; stop_lambda=1e6, stop_eps=NaN)
     return t_parse, t_solve, err
 end
 
-function main(cmd, num_samples, stop_eps)
+function main(cmd, num_samples)
     data = read(cmd)
-    timed_solve(data; stop_eps)
+    timed_solve(data)
 
     for _ in 1:num_samples
         try
             data = read(cmd)
             GC.gc(false)
-            tp, ts, err = timed_solve(data; stop_eps)
-            @printf "%.6f %d\n" (tp.time + ts.time) err
+            tp, ts, err = timed_solve(data)
+            @printf "%.4e %d\n" (tp.time + ts.time) err
         catch e
             @error e
         end
@@ -27,8 +27,7 @@ end
 
 if abspath(PROGRAM_FILE) == @__FILE__
     num_samples = parse(Int, ARGS[1])
-    precision = parse(Int, ARGS[2])
-    cmd = `sh -c $(ARGS[3])`
+    cmd = `sh -c $(ARGS[2])`
 
-    main(cmd, num_samples, exp10(-precision))
+    main(cmd, num_samples)
 end

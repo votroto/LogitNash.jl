@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 SAMPLES="$1"
-PRECISION="$2"
-CMD="$3"
+CMD="$2"
 TIMEFORMAT="%U %S"
 
 # gambit-logit currently never admits failure in case of non-convergence.
@@ -12,7 +11,7 @@ for ((i=1; i<=SAMPLES; i++)); do
     GAME=$(bash -c "$CMD")
 
     exec 3>&2
-    TIME_OUT=$( { time timeout 100 gambit-logit -qe -m1e-"$PRECISION" <<< "$GAME" >&3 2>&3; } 2>&1 )
+    TIME_OUT=$( { time gambit-logit -qe -l1000000 <<< "$GAME" >&3 2>&3; } 2>&1 )
     EXIT_CODE=$?
     exec 3>&-
 

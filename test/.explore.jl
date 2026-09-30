@@ -56,7 +56,7 @@ end
 function explore_solutions(
     utils::NTuple{N};
     num_starts::Int=200,
-    stop_iters::Int=400,
+    stop_iters::Int=200,
 ) where {N}
     dims = size(first(utils))
 
@@ -64,15 +64,15 @@ function explore_solutions(
 
     _dx = zero(_x)
     dt = 1.0
-    ds = 0.001
+    ds = 0.01
 
     _ws = LogitNash.make_hc_workspace(_x, dims)
     ws = LogitNash.make_hc_workspace(_x, dims)
     dx = zero(_x)
 
-    for iter in 0:1
-        x_guess = iter == 0 ? _x : [44.26286331908052, -8.433827586126018, -1.3644994306190235] # guess_x(dims)
-        t_guess =  iter == 0 ? 0.0 : 4.921327695818964 # rand_range(1.0, 8.0)
+    for iter in 0:num_starts
+        x_guess = iter == 0 ? _x : guess_x(dims)
+        t_guess = iter == 0 ? 0.0 : rand_range(1.0, 8.0)
 
         reset_refs(_ws, dims)
 
@@ -88,10 +88,8 @@ function explore_solutions(
         reset_refs(ws, dims)
         LogitNash._solve!(utils, 1*x, t, +1*dx, +1*dt, ds, ws; stop_iters, stop_eps=NaN)
 
-        if iter <= 0
         reset_refs(ws, dims)
         LogitNash._solve!(utils, 1*x, t, -1*dx, -1*dt, ds, ws; stop_iters, stop_eps=NaN)
-        end
     end
 end
 
