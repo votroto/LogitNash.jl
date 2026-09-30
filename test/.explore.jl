@@ -86,10 +86,10 @@ function explore_solutions(
         dx, dt = LogitNash.predict_direction!(dx, _ws)
 
         reset_refs(ws, dims)
-        LogitNash._solve!(utils, 1*x, t, +1*dx, +1*dt, ds, ws; stop_iters, stop_eps=NaN)
+        LogitNash._solve!(utils, 1*x, t, +1*dx, +1*dt, ds, ws; stop_iters)
 
         reset_refs(ws, dims)
-        LogitNash._solve!(utils, 1*x, t, -1*dx, -1*dt, ds, ws; stop_iters, stop_eps=NaN)
+        LogitNash._solve!(utils, 1*x, t, -1*dx, -1*dt, ds, ws; stop_iters)
     end
 end
 
