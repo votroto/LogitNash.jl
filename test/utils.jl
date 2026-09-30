@@ -1,4 +1,5 @@
 using Printf
+using LinearAlgebra
 
 function show_profile(io, profile)
     format_strat(strat) = join((@sprintf "%6.4f" a for a in strat), ", ")

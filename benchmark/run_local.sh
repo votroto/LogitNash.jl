@@ -1,5 +1,5 @@
 #!/bin/bash
-SAMPLES=50
+SAMPLES=100
 
 JOB_ID=$(date +%s)
 DIR="gamut.${JOB_ID}"
