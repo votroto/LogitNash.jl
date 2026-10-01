@@ -9,8 +9,11 @@ function validate_game(utils::NTuple{N,Array{R}}) where {N,R}
     if any(isempty, utils)
         throw(ArgumentError("Utility matrices cannot be empty."))
     end
-    if !allequal(size, utils)
-        throw(DimensionMismatch("All utility matrices must have matching sizes. Received sizes: $(map(size, utils))"))
+    size_p1 = size(utils[1])
+    for i in 2:N
+        if size(utils[i]) != size_p1
+            throw(DimensionMismatch("All utility matrices must have matching sizes. Received sizes: $(map(size, utils))"))
+        end
     end
     for U in utils
         for u in U
