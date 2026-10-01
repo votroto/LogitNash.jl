@@ -112,6 +112,20 @@ function _solve!(
     return ws.pi, (; lambda=expm1(t), iteration, regret, stall)
 end
 
+"""
+    solve(utils::NTuple{N,Array{R,N}}; stop_iters=1000, stop_lambda=1e6, stop_eps=1e-6) where {N,R<:Real}
+
+Approximates a specific mixed Nash equilibrium of a multiplayer general-sum game up to a desired precision by tracing the principal logit equilibrium branch parametrized by `λ`.
+
+     exp[λ Uₚᵏ(π₋ₚ)]
+    ------------------ = πₚᵏ
+    ∑ⱼ exp[λ Uₚʲ(π₋ₚ)]
+
+The algorithm stops when either:
+ - (ϵ-NE condition) there is no unilateral deviation from `π` more profitable than `stop_eps`,
+ - (logit condition) a solution is found for the precision parameter `λ` greater or equal to `stop_lambda`,
+ - or the maximum number of iterations of `stop_iters` is reached.
+"""
 function solve(utils::NTuple{N,Array{R,N}}; kwargs...) where {N,R<:Real}
     validate_game(utils)
     dims = size(first(utils))

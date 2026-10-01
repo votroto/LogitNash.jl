@@ -8,12 +8,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version:
+          - '1'
+          - 'lts'
+
     steps:
       - uses: actions/checkout@v7
 
       - uses: julia-actions/setup-julia@v3
         with:
-          version: '1'
+          version: ${{ matrix.version }}
 
       - uses: julia-actions/julia-buildpkg@v1
 
@@ -22,8 +28,7 @@ jobs:
           julia --project=. --color=yes -e 'using Pkg; Pkg.test(julia_args=["--code-coverage=coverage.info","--code-coverage=@src","--check-bounds=yes"])'
 
       - name: Update Coverage Badge Gist
-        # Prevent PRs from polluting the coverage badge
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.version == '1'
         env:
           GH_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: "7cc2561e5897bc8c43270ce659b45199"
@@ -51,8 +56,9 @@ jobs:
 
           echo "Coverage: $COVERAGE %"
           gh gist edit "$GIST_ID" --filename LogitNashCoverage.svg coverage.svg
+
       - name: Archive code coverage results
         uses: actions/upload-artifact@v7
         with:
-          name: code-coverage-report
+          name: code-coverage-report-${{ matrix.version }}
           path: coverage.info
