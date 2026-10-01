@@ -25,7 +25,7 @@ function validate_game(utils::NTuple{N, Array{R}}) where {N,R}
 end
 
 function max_deviation_incentive(ubar::NTuple{N}, pi::NTuple{N}) where N
-    sum(maximum(ubar[p]) - dot(ubar[p], pi[p]) for p in 1:N)
+    maximum(maximum(ubar[p]) - dot(ubar[p], pi[p]) for p in 1:N)
 end
 
 function lu_det_sign_rcond_heur(A::Matrix{Float64}, ipiv::Vector{BlasInt})
