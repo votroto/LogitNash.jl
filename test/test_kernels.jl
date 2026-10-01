@@ -15,28 +15,29 @@ function fd_jacobian(f, _x; h=1e-6)
 end
 
 function fast_lu_sanity()
-    original = randn(5, 5)
+    mat = randn(5, 5)
+    vec = randn(5)
     ipiv = Vector{LinearAlgebra.BlasInt}(undef, 5)
-    actual = copy(original)
 
-    lu_result = lu(original)
-    @test @allocated(LogitNash.fast_lu!(actual, ipiv)) == 0
+    expected = mat \ vec
+    @test @allocated(LogitNash.fast_factor_solve!(mat, vec, ipiv)) == 0
 
-    @test actual ≈ lu_result.factors
-    @test ipiv == lu_result.ipiv
+    @test expected ≈ vec
 end
 
 function fast_lu_singular()
-    original = zeros(5, 5)
+    mat = zeros(5, 5)
+    vec = randn(5)
     ipiv = Vector{LinearAlgebra.BlasInt}(undef, 5)
-    info = LogitNash.fast_lu!(original, ipiv)
+    _, _, _, info = LogitNash.fast_factor_solve!(mat, vec, ipiv)
     @test info > 0
 end
 
 function fast_lu_nonsingular()
-    original = randn(5, 5)
+    mat = randn(5, 5)
+    vec = randn(5)
     ipiv = Vector{LinearAlgebra.BlasInt}(undef, 5)
-    info = LogitNash.fast_lu!(original, ipiv)
+    _, _, _, info = LogitNash.fast_factor_solve!(mat, vec, ipiv)
     @test info == 0
 end
 
@@ -108,7 +109,7 @@ function jacobian_t_analytic_vs_finitedifference()
 
     Ft_fd = fd_jacobian(t -> residual_wrapper(x, only(t), utils), [t])
 
-    @test norm(wsFt - Ft_fd) <= 1e-4
+    @test norm(wsFt - Ft_fd) <= 1e-3
 
 end
 

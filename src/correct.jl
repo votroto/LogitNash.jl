@@ -51,13 +51,10 @@ function correct!(
         end
         ws.rhs_aug[end] = -r_con
 
-
-        info = fast_lu!(ws.J_aug, ws.ipiv)
+        _, _, _, info = fast_factor_solve!(ws.J_aug, ws.rhs_aug, ws.ipiv)
         if info > 0
             return STATUS_SINGULAR, x_nxt, t_nxt
         end
-
-        LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
 
         dt_step = ws.rhs_aug[end]
         step_norm_sq = dt_step^2

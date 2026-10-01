@@ -8,15 +8,13 @@ function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{F
     jacobian_x!(ws.Fx, pi, lambda, ws.dudpi, ws.ubar, ws.refs)
     jacobian_t!(ws.Ft, ws.ubar, lambda, ws.refs)
     jacobian_aug!(ws.J_aug, dx, dt)
-
-    fast_lu!(ws.J_aug, ws.ipiv)
 end
 
 function predict_direction!(dx::Vector{Float64}, ws)
     fill!(ws.rhs_aug, 0.0)
     ws.rhs_aug[end] = 1.0
 
-    LinearAlgebra.LAPACK.getrs!('N', ws.J_aug, ws.ipiv, ws.rhs_aug)
+    fast_factor_solve!(ws.J_aug, ws.rhs_aug, ws.ipiv)
 
     norm_factor = 1.0 / sqrt(dot(ws.rhs_aug, ws.rhs_aug))
     @inbounds for i in eachindex(dx)

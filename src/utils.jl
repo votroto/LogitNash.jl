@@ -1,6 +1,7 @@
 using LinearAlgebra: BlasInt
+using LinearAlgebra.LAPACK: @blasfunc, libblastrampoline
 
-function validate_game(utils::NTuple{N, Array{R}}) where {N,R}
+function validate_game(utils::NTuple{N,Array{R}}) where {N,R}
     if N <= 1
         throw(ArgumentError("A normal-form game must have at least 2 players; got N = $N."))
     end
@@ -49,9 +50,16 @@ function lu_det_sign_rcond_heur(A::Matrix{Float64}, ipiv::Vector{BlasInt})
     return (rcond >= 1e-5) ? s : 0.0
 end
 
-function fast_lu!(A::Matrix{Float64}, ipiv::Vector{BlasInt})
-    A, ipiv, info = LinearAlgebra.LAPACK.getrf!(A, ipiv)
-    return info
+function fast_factor_solve!(A::Matrix{Float64}, B::Vector{Float64}, ipiv::Vector{BlasInt})
+    n = size(A, 1)
+    info = Ref{BlasInt}()
+
+    ccall((@blasfunc(dgesv_), libblastrampoline), Cvoid,
+        (Ref{BlasInt}, Ref{BlasInt}, Ptr{Float64}, Ref{BlasInt}, Ptr{BlasInt},
+            Ptr{Float64}, Ref{BlasInt}, Ptr{BlasInt}),
+        n, 1, A, max(1, n), ipiv, B, max(1, n), info)
+
+    B, A, ipiv, info[]
 end
 
 function shift_and_insert!(v::AbstractVector, src::Int, dest::Int, val)
