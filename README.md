@@ -22,7 +22,7 @@ Not convinced? Benchmark it yourself with the prepared `/benchmark` scripts for 
 
 ## Install
 
-Install the package directly from GitHub by running
+Install the package by running
 ```julia
 import Pkg; Pkg.add("LogitNash")
 ```
