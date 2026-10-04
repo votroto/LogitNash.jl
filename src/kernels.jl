@@ -13,52 +13,111 @@ end
 
 _actsym(q) = Symbol("a", q)
 
-function _build_deriv_loops(N, p, d, w)
+function _build_deriv_loops(N, P, d, w_dict)
     ad = _actsym(d)
 
     if d == 1
-        ap = _actsym(p)
-
-        writes = nothing
-        accums = Expr[]
-
-        if p == 1
-            writes = [:((results[1][$q])[a1, $(_actsym(q))] += val * $(w[q])) for q in 2:N]
-        else
-            writes = [:((results[1][$p])[a1, $ap] += val * $(w[1]))]
-            accums = [:((results[$p][$q])[$ap, $(_actsym(q))] += s_shared * $(w[q])) for q in 2:N if q != p]
-        end
-
-        return quote
-            s_shared = 0.0
-            @simd ivdep for a1 in axes(pay_p, 1)
-                val = pay_p[linear_offset+a1]
-                $(writes...)
-                s_shared += val * pi[1][a1]
+        if P == 1:1
+            writes = Expr[]
+            for q in 2:N
+                push!(writes, :((results[1][$q])[a1, $(_actsym(q))] += val * $(w_dict[(1, q)])))
             end
-            linear_offset += size(pay_p, 1)
-            $(accums...)
+            return quote
+                @simd ivdep for a1 in axes(payoffs[1], 1)
+                    val = payoffs[1][linear_offset+a1]
+                    $(writes...)
+                end
+                linear_offset += size(payoffs[1], 1)
+            end
+        else
+            # Fused block for p in 2:N
+            inner_body = Expr[]
+            push!(inner_body, :(pi1_val = pi[1][a1]))
+
+            for p in P
+                ap = _actsym(p)
+                w1p = w_dict[(1, p)]
+                sym_val = Symbol("val_", p)
+                sym_s   = Symbol("s_shared_", p)
+
+                push!(inner_body, :($sym_val = payoffs[$p][linear_offset+a1]))
+                push!(inner_body, :((results[1][$p])[a1, $ap] += $sym_val * $w1p))
+                push!(inner_body, :($sym_s += $sym_val * pi1_val))
+            end
+
+            accums = Expr[]
+            for p in P
+                ap = _actsym(p)
+                sym_s = Symbol("s_shared_", p)
+                for q in 2:N
+                    if q != p
+                        wpq = w_dict[(min(p, q), max(p, q))]
+                        push!(accums, :((results[$p][$q])[$ap, $(_actsym(q))] += $sym_s * $wpq))
+                    end
+                end
+            end
+
+            inits = [:( $(Symbol("s_shared_", p)) = 0.0 ) for p in P]
+
+            return quote
+                $(inits...)
+                @simd ivdep for a1 in axes(payoffs[1], 1)
+                    $(inner_body...)
+                end
+                linear_offset += size(payoffs[1], 1)
+                $(accums...)
+            end
         end
     end
 
-    # Define which dimensions get hoisted constants
-    is_active(q) = (q != p && d != p && d != q)
-    next_w = Any[is_active(q) ? Symbol("w_d", d, "_q", q) : w[q] for q in 1:N]
-    assignments = [:($(next_w[q]) = $(w[q]) * pi[$d][$ad]) for q in 1:N if is_active(q)]
+    # d > 1: Hoist constants dynamically for required unordered pairs (i, j)
+    is_active(i, j) = (d != i && d != j)
+    next_w = Dict{Tuple{Int,Int}, Any}()
+    assignments = Expr[]
+
+    for (pair, w_sym) in w_dict
+        if is_active(pair[1], pair[2])
+            new_sym = Symbol("w_d", d, "_", pair[1], "_", pair[2])
+            push!(assignments, :($new_sym = $w_sym * pi[$d][$ad]))
+            next_w[pair] = new_sym
+        else
+            next_w[pair] = w_sym
+        end
+    end
 
     return quote
-        for $ad in axes(pay_p, $d)
+        for $ad in axes(payoffs[1], $d)
             $(assignments...)
-            $(_build_deriv_loops(N, p, d - 1, next_w))
+            $(_build_deriv_loops(N, P, d - 1, next_w))
         end
     end
 end
 
-function _build_deriv_loops(N, p)
+function _build_deriv_loops(N, P)
+    # Determine which unique unordered pairs (i, j) this loop block actually needs
+    needed_pairs = Tuple{Int,Int}[]
+    if P == 1:1
+        for q in 2:N
+            push!(needed_pairs, (1, q))
+        end
+    else
+        for p in P
+            push!(needed_pairs, (1, p))
+            for q in 2:N
+                if p != q
+                    push!(needed_pairs, (min(p, q), max(p, q)))
+                end
+            end
+        end
+    end
+    unique!(needed_pairs)
+
+    # Base weight is 1.0 at d = N before being successively multiplied downstream
+    w_dict = Dict{Tuple{Int,Int}, Any}(pair => 1.0 for pair in needed_pairs)
+
     return quote
-        pay_p = payoffs[$p]
         linear_offset = 0
-        @inbounds $(_build_deriv_loops(N, p, N, Any[1.0 for _ in 1:N]))
+        @inbounds $(_build_deriv_loops(N, P, N, w_dict))
     end
 end
 
@@ -75,21 +134,23 @@ Computes all the partial derivatives of U wrt π.
     payoffs::NTuple{N,Array{R,N}},
     pi::NTuple{N,Vector{Float64}}
 ) where {N,R<:Real}
-    nests = Expr[_build_deriv_loops(N, p) for p in 1:N]
+    # Two fused blocks: one shared for p != 1, one distinct for p == 1
+    nest_p2N = _build_deriv_loops(N, 2:N)
+    nest_p1  = _build_deriv_loops(N, 1:1)
 
     return quote
         for p in 1:N, q in 2:N
             p != q && fill!(results[p][q], 0.0)
         end
 
-        $(nests[2:end]...)
+        $nest_p2N
 
         for p in 2:N
             LinearAlgebra.transpose!(results[p][1], results[1][p])
             fill!(results[1][p], 0.0)
         end
 
-        $(nests[1])
+        $nest_p1
     end
 end
 
