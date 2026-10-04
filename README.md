@@ -24,7 +24,7 @@ Not convinced? Benchmark it yourself with the prepared `/benchmark` scripts for 
 
 Install the package directly from GitHub by running
 ```julia
-using Pkg; Pkg.add(url="https://github.com/votroto/LogitNash.jl")
+import Pkg; Pkg.add("LogitNash")
 ```
 
 ## Usage
