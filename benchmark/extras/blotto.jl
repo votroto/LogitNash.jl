@@ -17,18 +17,23 @@ using LinearAlgebra
 #    "fields"     int    number of fields (default: 3)
 #    "players"    int    number of players (default: 2)
 
-function generate_blotto_actions(coins::Int, ::Val{K}) where K
-    actions = NTuple{K,Int}[]
-    function generate(fields_left, coins_left, current)
-        if fields_left == 1
-            push!(actions, (current..., coins_left))
-            return
-        end
-        for c in 0:coins_left
-            generate(fields_left - 1, coins_left - c, (current..., c))
+function generate_blotto_actions(coins::Int, ::Val{K}) where {K}
+    function _generate!(actions, state, coins_left, field)
+        if field == K
+            state[field] = coins_left
+            push!(actions, ntuple(i -> state[i], Val(K)))
+        else
+            for c in 0:coins_left
+                state[field] = c
+                _generate!(actions, state, coins_left - c, field + 1)
+            end
         end
     end
-    generate(K, coins, ())
+
+    actions = NTuple{K,Int}[]
+    state = Vector{Int}(undef, K)
+    _generate!(actions, state, coins, 1)
+
     return actions
 end
 
@@ -51,9 +56,7 @@ end
     end
 end
 
-@inline function evaluate_blotto_game(allocations::NTuple{P,NTuple{K,Int}}) where {P,K}
-    points = get_points(allocations)
-
+function evaluate_blotto_game(points::NTuple{P}) where {P}
     max_pts = maximum(points)
     num_winners = count(==(max_pts), points)
 
@@ -67,20 +70,17 @@ end
     return map(pt -> pt == max_pts ? win_util : lose_util, points)
 end
 
-function generate_blotto_tensors(players::Int, coins::Int, fields::Int)
-    return _generate_blotto_tensors(Val(players), coins, Val(fields))
-end
-
 function _generate_blotto_tensors(::Val{P}, coins::Int, ::Val{K}) where {P,K}
     actions = generate_blotto_actions(coins, Val(K))
     num_actions = length(actions)
 
     dims = ntuple(_ -> num_actions, Val(P))
-    tensors = ntuple(_ -> zeros(Float32, dims), Val(P))
+    tensors = ntuple(_ -> Array{Float32}(undef, dims), Val(P))
 
     @inbounds for idx in CartesianIndices(dims)
         allocs = ntuple(p -> actions[idx.I[p]], Val(P))
-        utils = evaluate_blotto_game(allocs)
+        points = get_points(allocs)
+        utils = evaluate_blotto_game(points)
 
         for p in 1:P
             tensors[p][idx] = utils[p]
@@ -88,6 +88,10 @@ function _generate_blotto_tensors(::Val{P}, coins::Int, ::Val{K}) where {P,K}
     end
 
     return tensors
+end
+
+function generate_blotto_tensors(players::Int, coins::Int, fields::Int)
+    return _generate_blotto_tensors(Val(players), coins, Val(fields))
 end
 
 warm = ntuple(_ -> rand(Float32, 2, 2, 2, 2), 4)
