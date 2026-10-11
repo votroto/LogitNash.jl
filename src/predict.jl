@@ -36,9 +36,11 @@ function predict_step_quadratic!(
     dt_old::Float64,
     ds_old::Float64
 )
+    quad::Bool = !isnan(ds_old)
+
     c_factor = (ds^2) / (2.0 * ds_old)
-    @. x_pred = x + ds * dx + c_factor * (dx - dx_old)
-    t_pred = t + ds * dt + c_factor * (dt - dt_old)
+    @. x_pred = x + ds * dx + quad * (c_factor * (dx - dx_old))
+    t_pred = t + ds * dt + quad * (c_factor * (dt - dt_old))
 
     return x_pred, t_pred
 end

@@ -39,18 +39,16 @@ function uniform_xprofile(dims)
     zeros(nx)
 end
 
-function pivot_reference!(x_p, dx_p, dx_old_p, new_ref, old_ref)
+function pivot_reference!(x_p, dx_p, new_ref, old_ref)
     new_ref_idx = new_ref - (new_ref > old_ref)
 
     val_x = x_p[new_ref_idx]
     val_dx = dx_p[new_ref_idx]
-    val_dx_old = dx_old_p[new_ref_idx]
 
     # 1. Shift relative to the new reference
     @inbounds @simd for i in eachindex(x_p)
         x_p[i] -= val_x
         dx_p[i] -= val_dx
-        dx_old_p[i] -= val_dx_old
     end
 
     # 2. Determine where the old reference lands in the reduced array
@@ -59,21 +57,22 @@ function pivot_reference!(x_p, dx_p, dx_old_p, new_ref, old_ref)
     # 3. Shift elements and insert the old reference (negated)
     shift_and_insert!(x_p, new_ref_idx, dest_idx, -val_x)
     shift_and_insert!(dx_p, new_ref_idx, dest_idx, -val_dx)
-    shift_and_insert!(dx_old_p, new_ref_idx, dest_idx, -val_dx_old)
 end
 
-function pivot_references!(x, dx, dx_old, pi::NTuple{N}, refs) where N
+function pivot_references!(x, dx, pi::NTuple{N}, refs) where N
     mu_dim = ntuple(p -> length(pi[p]) - 1, N)
 
     mu_x = splitviews(x, mu_dim)
     mu_dx = splitviews(dx, mu_dim)
-    mu_dx_old = splitviews(dx_old, mu_dim)
 
+    changed = false
     for p in 1:N
         best_a = argmax(pi[p])
-        if best_a != refs[p]
-            pivot_reference!(mu_x[p], mu_dx[p], mu_dx_old[p], best_a, refs[p])
+        if best_a != refs[p] && pi[p][best_a] -  pi[p][refs[p]] >= 1e-3
+            changed = true
+            pivot_reference!(mu_x[p], mu_dx[p], best_a, refs[p])
             refs[p] = best_a
         end
     end
+    changed
 end

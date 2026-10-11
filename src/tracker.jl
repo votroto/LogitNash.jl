@@ -46,7 +46,7 @@ function _solve!(
     regret = NaN
     stall = false
     while t <= stop_t && iteration <= stop_iters && !stall && t > -10.0
-        update_predictor_jacobian!(x, t, dx, dt, utils, ws)
+        update_predictor_jacobian!(x, t, dx_old, dt_old, utils, ws)
         _regret = max_deviation_incentive(ws.ubar, ws.pi)
 
         @debug "Path" _id=:step pi=ws.pi lambda=expm1(t)
@@ -78,11 +78,12 @@ function _solve!(
                 t = t_nxt
                 det_sign = det_nxt
 
+                pivoted = pivot_references!(x, dx, ws.pi, ws.refs)
+
                 copyto!(dx_old, dx)
                 dt_old = dt
-                ds_old = ds
+                ds_old = ifelse(pivoted, NaN, ds)
 
-                pivot_references!(x, dx, dx_old, ws.pi, ws.refs)
                 break
             else
                 ds /= DECEL_FACTOR
