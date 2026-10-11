@@ -78,7 +78,7 @@ function _solve!(
                 t = t_nxt
                 det_sign = det_nxt
 
-                pivoted = pivot_references!(x, dx, ws.pi, ws.refs)
+                pivoted, dx, dt = pivot_references!(x, dx, dt, ws.pi, ws.refs)
 
                 copyto!(dx_old, dx)
                 dt_old = dt

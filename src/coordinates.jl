@@ -39,6 +39,19 @@ function uniform_xprofile(dims)
     zeros(nx)
 end
 
+function normalize_tangent_mu_t!(dmu, dt)
+    nrm2 = dt ^ 2
+    for m in dmu
+        nrm2 += m^2
+    end
+    nrm = sqrt(nrm2)
+
+    @. dmu /= nrm
+    dt /= nrm
+
+    return dmu, dt
+end
+
 function pivot_reference!(x_p, dx_p, new_ref, old_ref)
     new_ref_idx = new_ref - (new_ref > old_ref)
 
@@ -59,7 +72,7 @@ function pivot_reference!(x_p, dx_p, new_ref, old_ref)
     shift_and_insert!(dx_p, new_ref_idx, dest_idx, -val_dx)
 end
 
-function pivot_references!(x, dx, pi::NTuple{N}, refs) where N
+function pivot_references!(x, dx, dt, pi::NTuple{N}, refs) where N
     mu_dim = ntuple(p -> length(pi[p]) - 1, N)
 
     mu_x = splitviews(x, mu_dim)
@@ -68,11 +81,14 @@ function pivot_references!(x, dx, pi::NTuple{N}, refs) where N
     changed = false
     for p in 1:N
         best_a = argmax(pi[p])
-        if best_a != refs[p] && pi[p][best_a] -  pi[p][refs[p]] >= 1e-3
+        if best_a != refs[p] && x[best_a] >= 0.1
             changed = true
             pivot_reference!(mu_x[p], mu_dx[p], best_a, refs[p])
             refs[p] = best_a
         end
     end
-    changed
+    if changed
+        dx, dt = normalize_tangent_mu_t!(dx, dt)
+    end
+    changed, dx, dt
 end
