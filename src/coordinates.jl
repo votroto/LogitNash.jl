@@ -52,24 +52,12 @@ function normalize_tangent_mu_t!(dmu, dt)
     return dmu, dt
 end
 
-function pivot_reference!(x_p, dx_p, new_ref, old_ref)
-    new_ref_idx = new_ref - (new_ref > old_ref)
-
-    val_x = x_p[new_ref_idx]
-    val_dx = dx_p[new_ref_idx]
-
-    # 1. Shift relative to the new reference
-    @inbounds @simd for i in eachindex(x_p)
-        x_p[i] -= val_x
-        dx_p[i] -= val_dx
+function pivot_reference!(vs, best_idx, refs_idx)
+    v = vs[best_idx]
+    @inbounds @simd for i in eachindex(vs)
+        vs[i] -= v
     end
-
-    # 2. Determine where the old reference lands in the reduced array
-    dest_idx = new_ref < old_ref ? (old_ref - 1) : old_ref
-
-    # 3. Shift elements and insert the old reference (negated)
-    shift_and_insert!(x_p, new_ref_idx, dest_idx, -val_x)
-    shift_and_insert!(dx_p, new_ref_idx, dest_idx, -val_dx)
+    shift_and_insert!(vs, best_idx, refs_idx, -v)
 end
 
 function pivot_references!(x, dx, dt, pi::NTuple{N}, refs) where N
@@ -81,9 +69,13 @@ function pivot_references!(x, dx, dt, pi::NTuple{N}, refs) where N
     changed = false
     for p in 1:N
         best_a = argmax(pi[p])
-        if best_a != refs[p] && x[best_a] >= 0.1
+        best_idx = best_a - (best_a > refs[p])
+        refs_idx = refs[p] - (best_a < refs[p])
+
+        if best_a != refs[p] && mu_x[p][best_idx] >= 0.1
             changed = true
-            pivot_reference!(mu_x[p], mu_dx[p], best_a, refs[p])
+            pivot_reference!(mu_x[p], best_idx, refs_idx)
+            pivot_reference!(mu_dx[p], best_idx, refs_idx)
             refs[p] = best_a
         end
     end
