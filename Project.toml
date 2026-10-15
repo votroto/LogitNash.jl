@@ -1,6 +1,6 @@
 name = "LogitNash"
 uuid = "56ed5f9e-c32e-46b8-b489-5928d745fddb"
-version = "0.2.7"
+version = "0.3.0"
 authors = ["votroto <tomas.votroubek@outlook.com>"]
 
 [workspace]
@@ -9,6 +9,13 @@ projects = ["test"]
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
+[weakdeps]
+GameTheory = "64a4ffa8-f47c-4a47-8dad-aee7aadc3b51"
+
+[extensions]
+GameTheoryExt = "GameTheory"
+
 [compat]
+GameTheory = "0.8.0"
 LinearAlgebra = "1.8"
-julia = "1.8"
+julia = "1.9"

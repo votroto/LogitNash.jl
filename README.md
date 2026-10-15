@@ -63,3 +63,36 @@ Based on the papers:
 
 - Turocy, T. L. (2005). A dynamic homotopy interpretation of the logistic quantal response equilibrium correspondence. *Games and Economic Behavior, 51*(2), 243–263. https://doi.org/10.1016/j.geb.2004.04.003
 - Timme, S. (2021). Mixed precision path tracking for polynomial homotopy continuation. Advances in Computational Mathematics, 47, 75. https://doi.org/10.1007/s10444-021-09899-y
+
+## GameTheory.jl Extension
+
+Loading both `LogitNash` and `GameTheory` extends the `solve` function with an overload for `AbstractNormalFormGame` types.
+
+```julia
+# Example stolen from: https://github.com/QuantEcon/GameTheory.jl/pull/255
+
+using LogitNash, GameTheory
+using GameTheory: AbstractNormalFormGame, NormalFormGame, nums_actions
+
+struct Cournot{N,T<:Real} <: AbstractNormalFormGame{N,T}
+    a::T                # demand intercept
+    c::T                # marginal cost
+    q_grid::Vector{T}   # quantities available to each firm
+end
+
+Cournot{N}(a::T, c::T, q_grid::AbstractVector{T}) where {N,T} = Cournot{N,T}(a, c, q_grid)
+
+GameTheory.nums_actions(g::Cournot{N}) where {N} = ntuple(_ -> length(g.q_grid), Val(N))
+
+function GameTheory.payoff_profile(g::Cournot{N}, a) where {N}
+    q = ntuple(i -> g.q_grid[a[i]], Val(N))
+    p = g.a - g.c - sum(q)
+    return ntuple(i -> p * q[i], Val(N))
+end
+
+cournot = Cournot{4}(80, 20, 0:60) # Defines a game with 61^4 profiles.
+
+solve(cournot)
+```
+
+LogitNash currently constructs the full payoff tensors, which could take a lot of time and memory. Consider switching to a narrower Int type.
