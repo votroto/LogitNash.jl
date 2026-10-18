@@ -53,7 +53,7 @@ function lu_det_sign_rcond_heur(A::Matrix{Float64}, ipiv::Vector{BlasInt})
     return (rcond >= 1e-5) ? s : 0.0
 end
 
-function fast_factor_solve!(A::Matrix{Float64}, B::Vector{Float64}, ipiv::Vector{BlasInt})
+function bordered_solve!(A::Matrix{Float64}, B::Vector{Float64}, ipiv::Vector{BlasInt})
     n = size(A, 1)
     info = Ref{BlasInt}()
 
@@ -62,21 +62,16 @@ function fast_factor_solve!(A::Matrix{Float64}, B::Vector{Float64}, ipiv::Vector
             Ptr{Float64}, Ref{BlasInt}, Ptr{BlasInt}),
         n, 1, A, max(1, n), ipiv, B, max(1, n), info)
 
-    B, A, ipiv, info[]
+    result_top = @view B[begin:end-1]
+    result_aug = B[end]
+
+    result_top, result_aug, info[]
 end
 
-function shift_and_insert!(v::AbstractVector, src::Int, dest::Int, val)
-    if src < dest
-        # Shift elements left to close the gap
-        @inbounds for i in src:(dest-1)
-            v[i] = v[i+1]
-        end
-    elseif src > dest
-        # Shift elements right to close the gap
-        @inbounds for i in src:-1:(dest+1)
-            v[i] = v[i-1]
-        end
+function squared_norm(xs::AbstractVector{F}) where F
+    nrm2 = zero(F)
+    @inbounds @simd for x in xs
+        nrm2 += x^2
     end
-    @inbounds v[dest] = val
-    return v
+    nrm2
 end

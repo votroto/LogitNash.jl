@@ -7,7 +7,7 @@
 end
 
 function correct!(
-    x_nxt::Vector{Float64},
+    x_next::Vector{Float64},
     x_pred::Vector{Float64},
     t_pred::Float64,
     dx::Vector{Float64},
@@ -18,68 +18,52 @@ function correct!(
     abs_tol::Float64=1e-6,
     rel_tol::Float64=1e-11
 ) where {N}
-    copyto!(x_nxt, x_pred)
-    t_nxt = t_pred
+    copyto!(x_next, x_pred)
+    t_next = t_pred
 
     for i in 0:max_iters
-        mu, pi = extract_strategy_profiles!(ws.pi, x_nxt, ws.refs)
-        lambda = expm1(t_nxt)
+        mu, pi = extract_strategy_profiles!(ws.pi, x_next, ws.refs)
+        lambda = expm1(t_next)
 
-        unilateral_derivatives_cached!(ws.dudpi, utils, pi)
-        unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, pi)
+        update_kernels!(ws.dudpi, ws.ubar, pi, x_next, ws.refs, utils)
         residual!(ws.res, ws.ubar, mu, lambda, ws.refs)
+        arc = pseudo_arclength(x_next, t_next, x_pred, t_pred, dx, dt)
 
-        r_con = (t_nxt - t_pred) * dt
-        @inbounds @simd for j in eachindex(dx)
-            r_con += (x_nxt[j] - x_pred[j]) * dx[j]
-        end
-
-        if dot(ws.res, ws.res) + r_con^2 < abs_tol^2
-            return STATUS_SUCCESS, x_nxt, t_nxt
+        if squared_norm(ws.res) + arc^2 < abs_tol^2
+            return STATUS_SUCCESS, x_next, t_next
         end
 
         if i == max_iters
-            return STATUS_MAX_ITERS, x_nxt, t_nxt
+            break
         end
 
-        jacobian_x!(ws.Fx, pi, lambda, ws.dudpi, ws.ubar, ws.refs)
-        jacobian_t!(ws.Ft, ws.ubar, lambda, ws.refs)
-        jacobian_aug!(ws.J_aug, dx, dt)
+        system_jac_Fx!(ws.jac_aug, pi, lambda, ws.dudpi, ws.ubar, ws.refs)
+        system_jac_Ft!(ws.jac_aug, ws.ubar, lambda, ws.refs)
+        system_jac_dx_dt!(ws.jac_aug, dx, dt)
+        system_rhs_F_g!(ws.rhs_aug, ws.res, arc)
 
-        @inbounds for j in eachindex(ws.res)
-            ws.rhs_aug[j] = -ws.res[j]
-        end
-        ws.rhs_aug[end] = -r_con
-
-        _, _, _, info = fast_factor_solve!(ws.J_aug, ws.rhs_aug, ws.ipiv)
+        x_step, t_step, info = bordered_solve!(ws.jac_aug, ws.rhs_aug, ws.ipiv)
         if info > 0
-            return STATUS_SINGULAR, x_nxt, t_nxt
+            return STATUS_SINGULAR, x_next, t_next
         end
 
-        dt_step = ws.rhs_aug[end]
-        step_norm_sq = dt_step^2
+        @. x_next += x_step
+        t_next += t_step
 
-        @inbounds @simd for j in eachindex(x_nxt)
-            step_j = ws.rhs_aug[j]
-            step_norm_sq += step_j^2
-            x_nxt[j] += step_j
-        end
-        t_nxt += dt_step
+        val_squared_norm = squared_norm(x_next) + t_next^2
+        step_squared_norm = squared_norm(x_step) + t_step^2
 
-        step_norm_2 = (step_norm_sq)
-        val_norm_2 = dot(x_nxt, x_nxt) + t_nxt^2
-
-
-        if !isfinite(t_nxt) || t_nxt > 50.0 || t_nxt < -20.0 || any(!isfinite, x_nxt)
-            return STATUS_LARGE_DISTANCE, x_nxt, t_nxt
+        if any(!isfinite, x_next) || !(-10 <= t_next && t_next <= 50.0)
+            return STATUS_LARGE_DISTANCE, x_next, t_next
         end
 
-        if step_norm_2 < rel_tol^2 * val_norm_2
-            return STATUS_SUCCESS, x_nxt, t_nxt
+        # Further progress in f64 likely meaningless.
+        if step_squared_norm < rel_tol^2 * val_squared_norm
+            return STATUS_SUCCESS, x_next, t_next
         end
     end
 
-    return STATUS_MAX_ITERS, x_nxt, t_nxt
+    return STATUS_MAX_ITERS, x_next, t_next
 end
 
 function validate_step(
@@ -96,16 +80,16 @@ function validate_step(
         return status, 0.0
     end
 
-    dist_sq = (t_next - t_pred)^2
-    @inbounds for j in 1:length(x_next)
-        dist_sq += (x_next[j] - x_pred[j])^2
+    squared_tangent_distance = (t_next - t_pred)^2
+    @inbounds @simd for j in 1:length(x_next)
+        squared_tangent_distance += (x_next[j] - x_pred[j])^2
     end
 
-    if dist_sq > (0.5 * ds)^2
+    if squared_tangent_distance > (0.5 * ds)^2
         return STATUS_LARGE_DISTANCE, 0.0
     end
 
-    cur_det_sign = lu_det_sign_rcond_heur(ws.J_aug, ws.ipiv)
+    cur_det_sign = lu_det_sign_rcond_heur(ws.jac_aug, ws.ipiv)
     if det_sign != 0.0 && cur_det_sign != 0.0 && cur_det_sign != det_sign
         return STATUS_JUMP, cur_det_sign
     end
@@ -113,15 +97,14 @@ function validate_step(
     return STATUS_SUCCESS, cur_det_sign
 end
 
-function validate_residual(x_mid, t_mid, utils, ws; abs_tol=1e-3)
-    mu, pi = extract_strategy_profiles!(ws.pi, x_mid, ws.refs)
-    lambda = expm1(t_mid)
+function validate_residual(x, t, utils, ws; abs_tol=1e-3)
+    mu, pi = extract_strategy_profiles!(ws.pi, x, ws.refs)
+    lambda = expm1(t)
 
-    unilateral_derivatives_cached!(ws.dudpi, utils, pi)
-    unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, pi)
+    update_kernels!(ws.dudpi, ws.ubar, pi, x, ws.refs, utils)
     residual!(ws.res, ws.ubar, mu, lambda, ws.refs)
 
-    if dot(ws.res, ws.res) <= abs_tol^2
+    if squared_norm(ws.res) <= abs_tol^2
         return STATUS_SUCCESS
     else
         return STATUS_JUMP

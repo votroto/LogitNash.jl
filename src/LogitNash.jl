@@ -4,6 +4,7 @@ module LogitNash
 include("utils.jl")
 include("coordinates.jl")
 include("kernels.jl")
+include("system.jl")
 include("predict.jl")
 include("correct.jl")
 include("tracker.jl")

@@ -1,4 +1,4 @@
-function unilateral_deviations_from_derivatives!(
+function unilateral_deviations!(
     out::NTuple{N,Vector{Float64}},
     dudpi::NTuple{N,NTuple{N,Matrix{Float64}}},
     pi::NTuple{N,Vector{Float64}},
@@ -64,7 +64,7 @@ end
 
 """ unilateral_derivatives!(dudpi, payoffs, pi)
 
-Computes all the partial derivatives of U wrt π.
+Computes all the partial derivatives of U wrt π and writes them into `dudpi`.
 
     ∂Upⁱ
     ---- = dudpi[p][q][i,j]
@@ -77,6 +77,7 @@ Computes all the partial derivatives of U wrt π.
 ) where {N,R<:Real}
     nests = Expr[_build_deriv_loops(N, p) for p in 1:N]
 
+    # Temporarily hijacks P1's dudpi for better access pattern.
     return quote
         for p in 1:N, q in 2:N
             p != q && fill!(results[p][q], 0.0)
@@ -93,7 +94,7 @@ Computes all the partial derivatives of U wrt π.
     end
 end
 
-""" Mark derivative version inside the pointless diagonal results matrices. """
+""" Mark derivative version inside the spare diagonal results matrices. """
 function unilateral_derivatives_cached!(
     results::NTuple{N,NTuple{N,Matrix{Float64}}},
     payoffs::NTuple{N,Array{R,N}},
@@ -103,107 +104,21 @@ function unilateral_derivatives_cached!(
     for p in 1:N
         @inbounds for i in eachindex(pi[p])
             if results[p][p][i, 1] != pi[p][i]
+                results[p][p][i, 1] = pi[p][i]
                 is_cached = false
-                break
             end
         end
-        is_cached || break
     end
 
     is_cached && return nothing
-
-    for p in 1:N
-        @inbounds for i in eachindex(pi[p])
-            results[p][p][i, 1] = pi[p][i]
-        end
-    end
 
     unilateral_derivatives!(results, payoffs, pi)
     return nothing
 end
 
-function residual!(out, ubar, mu, lambda, refs)
-    idx = 1
-    @inbounds for p in eachindex(mu)
-        ref_a = refs[p]
-        for i in eachindex(mu[p])
-            a = i + (i >= ref_a)
-            out[idx] = mu[p][i] - lambda*(ubar[p][a] - ubar[p][ref_a])
-            idx += 1
-        end
-    end
-    out
-end
+function update_kernels!(dudpi, ubar, pi, x, refs, utils)
+    extract_strategy_profiles!(pi, x, refs)
 
-function jacobian_t!(J, ubar, lambda, refs)
-    idx = 1
-    @inbounds for p in eachindex(ubar)
-        ref_a = refs[p]
-        for i in 1:(length(ubar[p])-1)
-            a = i + (i >= ref_a)
-            J[idx] = (1.0 + lambda) * (ubar[p][ref_a] - ubar[p][a])
-            idx += 1
-        end
-    end
-    J
-end
-
-function _set_I_block!(J::AbstractMatrix{T}) where {T}
-    @inbounds for j in axes(J, 1)
-        @simd ivdep for i in axes(J, 2)
-            J[i, j] = ifelse(i == j, one(T), zero(T))
-        end
-    end
-end
-
-function _set_pq_block!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, ubar, refs, p, q) where {N,T}
-    dudpi_pq = dudpi[p][q]
-    Rp = refs[p]
-    Rq = refs[q]
-
-    @inbounds for _j in axes(J, 2)
-        j = _j + (_j >= Rq)
-        lam_pi_q = -lambda * pi[q][j]
-
-        @simd ivdep for _i in axes(J, 1)
-            i = _i + (_i >= Rp)
-
-            lhs = dudpi_pq[i, j] - dudpi_pq[Rp, j]
-            rhs = ubar[p][i] - ubar[p][Rp]
-
-            J[_i, _j] = lam_pi_q * (lhs - rhs)
-        end
-    end
-end
-
-function jacobian_x!(J::AbstractMatrix{T}, pi::NTuple{N}, lambda, dudpi, ubar, refs) where {N,T}
-    eq_start = 1
-    @inbounds for p in 1:N
-        Dp = length(pi[p]) - 1
-
-        pd_start = 1
-        for q in 1:N
-            Dq = length(pi[q]) - 1
-
-            pq_block = @view J[eq_start:(eq_start+Dp-1), pd_start:(pd_start+Dq-1)]
-
-            if q == p
-                _set_I_block!(pq_block)
-            else
-                _set_pq_block!(pq_block, pi, lambda, dudpi, ubar, refs, p, q)
-            end
-
-            pd_start += Dq
-        end
-        eq_start += Dp
-    end
-
-    return J
-end
-
-function jacobian_aug!(J, dx, dt)
-    @inbounds for j in eachindex(dx)
-        J[end, j] = dx[j]
-    end
-    J[end, end] = dt
+    unilateral_derivatives_cached!(dudpi, utils, pi)
+    unilateral_deviations!(ubar, dudpi, pi)
 end

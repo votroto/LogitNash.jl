@@ -1,31 +1,28 @@
 function redlograt_to_prob!(y::AbstractVector{F}, x::AbstractVector{F}, ref::Int) where F
     c = maximum(x, init=zero(F))
-    denom = zero(F)
 
+    nrm = exp(-c)
+    @inbounds y[ref] = nrm
     @inbounds for i in eachindex(x)
         a = i + (i >= ref)
         v = exp(x[i] - c)
         y[a] = v
-        denom += v
+        nrm += v
     end
 
-    y[ref] = exp(-c)
-    denom += y[ref]
-
-    @inbounds for i in eachindex(y)
-        y[i] = y[i] / denom
-    end
+    rnrm = inv(nrm)
+    @. y *= rnrm
 
     return y
 end
 
 function splitviews(x::AbstractVector, js::NTuple{N,Int}) where {N}
     offs = cumsum((0, js...))
-    ntuple(i -> @view(x[(offs[i]+1):offs[i+1]]), N)
+    ntuple(i -> @view(x[(offs[i]+1):offs[i+1]]), Val(N))
 end
 
 function extract_strategy_profiles!(pi_buffs::NTuple{N}, x, refs) where N
-    mu = splitviews(x, ntuple(p -> length(pi_buffs[p]) - 1, N))
+    mu = splitviews(x, ntuple(p -> length(pi_buffs[p]) - 1, Val(N)))
 
     for p in 1:N
         redlograt_to_prob!(pi_buffs[p], mu[p], refs[p])
@@ -40,31 +37,33 @@ function uniform_xprofile(dims)
 end
 
 function normalize_tangent_mu_t!(dmu, dt)
-    nrm2 = dt ^ 2
-    for m in dmu
-        nrm2 += m^2
-    end
-    nrm = sqrt(nrm2)
+    nrm2 = dt^2 + squared_norm(dmu)
+    rnrm = 1 / sqrt(nrm2)
 
-    @. dmu /= nrm
-    dt /= nrm
+    @. dmu *= rnrm
+    dt *= rnrm
 
     return dmu, dt
 end
 
 function pivot_reference!(vs, best_idx, refs_idx)
-    v = vs[best_idx]
-    @inbounds @simd for i in eachindex(vs)
-        vs[i] -= v
+    b = vs[best_idx]
+    @. vs -= b
+
+    step = ifelse(best_idx < refs_idx, 1, -1)
+    @inbounds for i in best_idx:step:(refs_idx-step)
+        vs[i] = vs[i+step]
     end
-    shift_and_insert!(vs, best_idx, refs_idx, -v)
+    @inbounds vs[refs_idx] = -b
+
+    return vs
 end
 
 function pivot_references!(x, dx, dt, pi::NTuple{N}, refs) where N
-    mu_dim = ntuple(p -> length(pi[p]) - 1, N)
+    mu_dim = ntuple(p -> length(pi[p]) - 1, Val(N))
 
-    mu_x = splitviews(x, mu_dim)
-    mu_dx = splitviews(dx, mu_dim)
+    mu = splitviews(x, mu_dim)
+    dmu = splitviews(dx, mu_dim)
 
     changed = false
     for p in 1:N
@@ -72,10 +71,10 @@ function pivot_references!(x, dx, dt, pi::NTuple{N}, refs) where N
         best_idx = best_a - (best_a > refs[p])
         refs_idx = refs[p] - (best_a < refs[p])
 
-        if best_a != refs[p] && mu_x[p][best_idx] >= 0.1
+        if best_a != refs[p] && mu[p][best_idx] >= 0.1
             changed = true
-            pivot_reference!(mu_x[p], best_idx, refs_idx)
-            pivot_reference!(mu_dx[p], best_idx, refs_idx)
+            pivot_reference!(mu[p], best_idx, refs_idx)
+            pivot_reference!(dmu[p], best_idx, refs_idx)
             refs[p] = best_a
         end
     end

@@ -82,8 +82,9 @@ function explore_solutions(
             continue
         end
 
-        LogitNash.update_predictor_jacobian!(x, t, _dx, dt, utils, _ws)
-        dx, dt = LogitNash.predict_direction!(dx, _ws)
+        LogitNash.extract_strategy_profiles!(ws.pi, x, ws.refs)
+        LogitNash.update_kernels!(ws.dudpi, ws.ubar, ws.pi, x, ws.refs, utils)
+        dx, dt = LogitNash.predict_tangent!(dx, _dx, dt, t, ws.pi, _ws)
 
         reset_refs(ws, dims)
         LogitNash._solve!(utils, 1*x, t, +1*dx, +1*dt, ds, ws; stop_iters)

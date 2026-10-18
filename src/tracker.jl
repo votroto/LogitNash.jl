@@ -11,19 +11,16 @@ function make_hc_workspace(x_template::Vector{Float64}, dims::NTuple{N}) where {
     ubar = ntuple(i -> zeros(dims[i]), Val(N))
     dudpi = ntuple(p -> ntuple(q -> fill(NaN, dims[p], dims[q]), Val(N)), Val(N))
 
-    J_aug = zeros(n + 1, n + 1)
-    Fx = view(J_aug, 1:n, 1:n)
-    Ft = view(J_aug, 1:n, n + 1)
-    ipiv = Vector{BlasInt}(undef, n + 1)
-
+    jac_aug = zeros(n + 1, n + 1)
     rhs_aug = Vector{Float64}(undef, n + 1)
+    ipiv = Vector{BlasInt}(undef, n + 1)
 
     x_pred = Vector{Float64}(undef, n)
     x_nxt = Vector{Float64}(undef, n)
 
     refs = Int[dims[i] for i in 1:N]
 
-    return (; pi, res, ubar, dudpi, J_aug, Fx, Ft, ipiv, rhs_aug, x_pred, x_nxt, refs)
+    return (; pi, res, ubar, dudpi, jac_aug, ipiv, rhs_aug, x_pred, x_nxt, refs)
 end
 
 function _solve!(
@@ -46,7 +43,8 @@ function _solve!(
     regret = NaN
     stall = false
     while t <= stop_t && iteration <= stop_iters && !stall && t > -10.0
-        update_predictor_jacobian!(x, t, dx_old, dt_old, utils, ws)
+        extract_strategy_profiles!(ws.pi, x, ws.refs)
+        update_kernels!(ws.dudpi, ws.ubar, ws.pi, x, ws.refs, utils)
         _regret = max_deviation_incentive(ws.ubar, ws.pi)
 
         @debug "Path" _id=:step pi=ws.pi lambda=expm1(t)
@@ -56,24 +54,26 @@ function _solve!(
             break
         end
 
-        dx, dt = predict_direction!(dx, ws)
+        dx, dt = predict_tangent!(dx, dx_old, dt_old, t, ws.pi, ws)
 
+        # Numerical prophylaxis: stop unnecessary overshoot.
         if t + ds * dt > stop_t + 2.0
             ds = (stop_t + 2.0 - t) / dt
         end
 
         while true
-            x_pred, t_pred = predict_step_quadratic!(ws.x_pred, x, t, dx, dt, ds, dx_old, dt_old, ds_old)
-            st_cor, x_nxt, t_nxt = correct!(ws.x_nxt, x_pred, t_pred, dx, dt, utils, ws)
-            st_val, det_nxt = validate_step(st_cor, x_nxt, t_nxt, x_pred, t_pred, det_sign, ds, ws)
+            x_pred, t_pred = predict_step!(ws.x_pred, x, t, dx, dt, ds, dx_old, dt_old, ds_old)
+            status, x_nxt, t_nxt = correct!(ws.x_nxt, x_pred, t_pred, dx, dt, utils, ws)
+            status, det_nxt = validate_step(status, x_nxt, t_nxt, x_pred, t_pred, det_sign, ds, ws)
 
-            if st_val == STATUS_JUMP
+            # Primitive midpoint residual test. Allows reuse of derivatives.
+            if status == STATUS_JUMP
                 ds_mid = ds / DECEL_FACTOR
-                x_mid, t_mid = predict_step_quadratic!(ws.x_pred, x, t, dx, dt, ds_mid, dx_old, dt_old, ds_old)
-                st_val = validate_residual(x_mid, t_mid, utils, ws)
+                x_mid, t_mid = predict_step!(ws.x_pred, x, t, dx, dt, ds_mid, dx_old, dt_old, ds_old)
+                status = validate_residual(x_mid, t_mid, utils, ws)
             end
 
-            if st_val == STATUS_SUCCESS
+            if status == STATUS_SUCCESS
                 copyto!(x, x_nxt)
                 t = t_nxt
                 det_sign = det_nxt
@@ -82,6 +82,7 @@ function _solve!(
 
                 copyto!(dx_old, dx)
                 dt_old = dt
+                # ds loses meaning after pivot. Fallback to tangent predictor.
                 ds_old = ifelse(pivoted, NaN, ds)
 
                 break
@@ -106,7 +107,8 @@ function _solve!(
     @debug "Path" _id=:end pi=ws.pi lambda=expm1(t)
 
     if isnan(regret)
-        update_predictor_jacobian!(x, t, dx, dt, utils, ws)
+        extract_strategy_profiles!(ws.pi, x, ws.refs)
+        update_kernels!(ws.dudpi, ws.ubar, ws.pi, x, ws.refs, utils)
         regret = max_deviation_incentive(ws.ubar, ws.pi)
     end
 

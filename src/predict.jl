@@ -1,31 +1,21 @@
-function update_predictor_jacobian!(x::Vector{Float64}, t::Float64, dx::Vector{Float64}, dt::Float64, utils::NTuple{N}, ws) where {N}
-    _mu, pi = extract_strategy_profiles!(ws.pi, x, ws.refs)
+function predict_tangent!(dx, dx_old, dt_old, t, pi, ws)
     lambda = expm1(t)
 
-    unilateral_derivatives_cached!(ws.dudpi, utils, pi)
-    unilateral_deviations_from_derivatives!(ws.ubar, ws.dudpi, pi)
+    system_jac_Fx!(ws.jac_aug, pi, lambda, ws.dudpi, ws.ubar, ws.refs)
+    system_jac_Ft!(ws.jac_aug, ws.ubar, lambda, ws.refs)
+    system_jac_dx_dt!(ws.jac_aug, dx_old, dt_old)
+    system_rhs_0_1!(ws.rhs_aug)
 
-    jacobian_x!(ws.Fx, pi, lambda, ws.dudpi, ws.ubar, ws.refs)
-    jacobian_t!(ws.Ft, ws.ubar, lambda, ws.refs)
-    jacobian_aug!(ws.J_aug, dx, dt)
-end
+    dir_x, dir_t, = bordered_solve!(ws.jac_aug, ws.rhs_aug, ws.ipiv)
 
-function predict_direction!(dx::Vector{Float64}, ws)
-    fill!(ws.rhs_aug, 0.0)
-    ws.rhs_aug[end] = 1.0
-
-    fast_factor_solve!(ws.J_aug, ws.rhs_aug, ws.ipiv)
-
-    norm_factor = 1.0 / sqrt(dot(ws.rhs_aug, ws.rhs_aug))
-    @inbounds for i in eachindex(dx)
-        dx[i] = ws.rhs_aug[i] * norm_factor
-    end
-    dt = ws.rhs_aug[end] * norm_factor
+    rnrm = 1 / sqrt(squared_norm(dir_x) + dir_t^2)
+    @. dx = dir_x * rnrm
+    dt = dir_t * rnrm
 
     return dx, dt
 end
 
-function predict_step_quadratic!(
+function predict_step!(
     x_pred::Vector{Float64},
     x::Vector{Float64},
     t::Float64,

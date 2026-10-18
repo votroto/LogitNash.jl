@@ -20,7 +20,7 @@ function fast_lu_sanity()
     ipiv = Vector{LinearAlgebra.BlasInt}(undef, 5)
 
     expected = mat \ vec
-    @test @allocated(LogitNash.fast_factor_solve!(mat, vec, ipiv)) == 0
+    @test @allocated(LogitNash.bordered_solve!(mat, vec, ipiv)) == 0
 
     @test expected ≈ vec
 end
@@ -29,7 +29,7 @@ function fast_lu_singular()
     mat = zeros(5, 5)
     vec = randn(5)
     ipiv = Vector{LinearAlgebra.BlasInt}(undef, 5)
-    _, _, _, info = LogitNash.fast_factor_solve!(mat, vec, ipiv)
+    _, _, info = LogitNash.bordered_solve!(mat, vec, ipiv)
     @test info > 0
 end
 
@@ -37,7 +37,7 @@ function fast_lu_nonsingular()
     mat = randn(5, 5)
     vec = randn(5)
     ipiv = Vector{LinearAlgebra.BlasInt}(undef, 5)
-    _, _, _, info = LogitNash.fast_factor_solve!(mat, vec, ipiv)
+    _, _, info = LogitNash.bordered_solve!(mat, vec, ipiv)
     @test info == 0
 end
 
@@ -56,12 +56,12 @@ function residual_wrapper(x, t, utils::NTuple{N}) where {N}
     LogitNash.redlograt_to_prob!.(pi, mu, refs)
 
     LogitNash.unilateral_derivatives!(wsdudpi, utils, pi)
-    LogitNash.unilateral_deviations_from_derivatives!(ubar, wsdudpi, pi)
+    LogitNash.unilateral_deviations!(ubar, wsdudpi, pi)
 
     LogitNash.residual!(res, ubar, mu, lambda, refs)
 end
 
-function jacobian_x_analytic_vs_finitedifference()
+function system_jac_Fx_analytic_vs_finitedifference()
     utils = (randn(2, 3, 4), randn(2, 3, 4), randn(2, 3, 4))
 
     lambda = rand()*100
@@ -78,15 +78,15 @@ function jacobian_x_analytic_vs_finitedifference()
     refs = size(first(utils))
 
     LogitNash.unilateral_derivatives!(wsdudpi, utils, _pi)
-    LogitNash.unilateral_deviations_from_derivatives!(ubar, wsdudpi, _pi)
-    LogitNash.jacobian_x!(wsFx, _pi, lambda, wsdudpi, ubar, refs)
+    LogitNash.unilateral_deviations!(ubar, wsdudpi, _pi)
+    LogitNash.system_jac_Fx!(wsFx, _pi, lambda, wsdudpi, ubar, refs)
 
     Fx_fd = fd_jacobian(x -> residual_wrapper(x, t, utils), x)
 
     @test norm(wsFx - Fx_fd) <= 1e-4
 end
 
-function jacobian_t_analytic_vs_finitedifference()
+function system_jac_Ft_analytic_vs_finitedifference()
     utils = (randn(2, 3, 4), randn(2, 3, 4), randn(2, 3, 4))
 
     lambda = rand()*100
@@ -103,9 +103,9 @@ function jacobian_t_analytic_vs_finitedifference()
     refs = size(first(utils))
 
     LogitNash.unilateral_derivatives!(wsdudpi, utils, _pi)
-    LogitNash.unilateral_deviations_from_derivatives!(wsubar, wsdudpi, _pi)
+    LogitNash.unilateral_deviations!(wsubar, wsdudpi, _pi)
 
-    LogitNash.jacobian_t!(wsFt, wsubar, lambda, refs)
+    LogitNash.system_jac_Ft!(wsFt, wsubar, lambda, refs)
 
     Ft_fd = fd_jacobian(t -> residual_wrapper(x, only(t), utils), [t])
 
@@ -132,10 +132,10 @@ end
         fast_lu_sanity()
     end
     for N in 1:5
-        jacobian_x_analytic_vs_finitedifference()
+        system_jac_Fx_analytic_vs_finitedifference()
     end
     for N in 1:5
-        jacobian_t_analytic_vs_finitedifference()
+        system_jac_Ft_analytic_vs_finitedifference()
     end
     for N in 1:5
         residual_zero_only_at_uniform()

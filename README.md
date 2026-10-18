@@ -69,7 +69,8 @@ Based on the papers:
 Loading both `LogitNash` and `GameTheory` extends the `solve` function with an overload for `AbstractNormalFormGame` types.
 
 ```julia
-# Example stolen from: https://github.com/QuantEcon/GameTheory.jl/pull/255
+# Example courtesy of Professor Oyama Daisuke
+# https://github.com/QuantEcon/GameTheory.jl/pull/255
 
 using LogitNash, GameTheory
 using GameTheory: AbstractNormalFormGame, NormalFormGame, nums_actions

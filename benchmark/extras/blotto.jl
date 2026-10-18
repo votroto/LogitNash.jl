@@ -97,7 +97,7 @@ end
 warm = ntuple(_ -> rand(Float32, 2, 2, 2, 2), 4)
 ne, st = solve(warm; stop_lambda=Inf, stop_eps=1e-2)
 
-blotto = generate_blotto_tensors(4, 10, 3)
+blotto = generate_blotto_tensors(3, 2, 2)
 
 rtol = 1e-6 * (maximum(first(blotto)) - minimum(first(blotto)))
-@time ne, st = solve(blotto; stop_lambda=Inf, stop_eps=rtol)
+@time ne, st = solve(blotto; stop_lambda=Inf, stop_eps=1e-16)
